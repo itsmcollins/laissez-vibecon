@@ -231,6 +231,7 @@ def test_llm_fallback_functionality() -> Dict[str, Any]:
     test_payload = {
         "message": {
             "chat": {"id": 999999},
+            "from": {"id": 999999},
             "text": "What is 2+2?"
         }
     }
