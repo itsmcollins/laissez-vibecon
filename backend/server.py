@@ -639,12 +639,13 @@ async def telegram_webhook(bot_token: str, request: Request):
                         expires_at = (datetime.utcnow() + timedelta(hours=24)).isoformat()
                         
                         # Create pending link (code will be auto-generated as UUID by database)
-                        # Store the original query and bot_token so we can process it after linking
+                        # Store the original query, bot_token, and chat_id so we can process it after linking
                         pending_data = {
                             "platform": "telegram",
                             "platform_user_id": telegram_user_id,
                             "original_query": user_message,  # Store the user's original message
                             "bot_token": bot_token,  # Store which bot/agent they're messaging
+                            "chat_id": str(chat_id),  # Store where to send the response
                             "expires_at": expires_at
                         }
                         
