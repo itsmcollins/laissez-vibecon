@@ -382,12 +382,18 @@ async def send_usdc_payment(
         # Convert USDC amount to atomic units
         amount_atomic = int(amount_usdc * (10 ** USDC_DECIMALS))
         
-        # Encode transfer function call using viem
-        data = encodeFunctionData(
-            abi=erc20Abi,
-            functionName="transfer",
-            args=[recipient_address, amount_atomic]
-        )
+        # Encode transfer(address,uint256) function call
+        # Function selector: keccak256("transfer(address,uint256)")[:4] = 0xa9059cbb
+        function_selector = "0xa9059cbb"
+        
+        # Encode parameters
+        encoded_params = encode(
+            ['address', 'uint256'],
+            [recipient_address, amount_atomic]
+        ).hex()
+        
+        # Combine selector and params
+        data = function_selector + encoded_params
         
         # Use Privy's server-side signing API
         async with httpx.AsyncClient(timeout=30.0) as client:
