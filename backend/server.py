@@ -535,8 +535,19 @@ async def telegram_webhook(bot_token: str, request: Request):
                     ).eq("platform_user_id", telegram_user_id).execute()
                     
                     if not linked_account.data or len(linked_account.data) == 0:
-                        # Not linked - create pending link and send instructions
+                        # Not linked - create pending link and show price
                         print(f"Telegram user {telegram_user_id} not linked, creating pending link...")
+                        
+                        # Get agent configuration to show price in message
+                        agent_response = supabase.table("agents").select("price").eq(
+                            "bot_token", bot_token
+                        ).execute()
+                        
+                        price_display = ""
+                        if agent_response.data and len(agent_response.data) > 0:
+                            price = agent_response.data[0].get("price", 0)
+                            if price and price > 0:
+                                price_display = f"💰 This agent costs ${price:.3f} per message to use.\n\n"
                         
                         expires_at = (datetime.utcnow() + timedelta(hours=24)).isoformat()
                         
@@ -584,10 +595,11 @@ async def telegram_webhook(bot_token: str, request: Request):
                         print(f"✓ Constructed link URL: {link_url}")
                         
                         response_text = (
-                            f"🔗 Account Linking Required\n\n"
-                            f"To use this agent, please link your Telegram account:\n"
+                            f"🤖 Welcome to this Laissez Agent!\n\n"
+                            f"{price_display}"
+                            f"Start using it with your Laissez account:\n"
                             f"{link_url}\n\n"
-                            f"This link expires in 24 hours."
+                            f"(Link expires in 24 hours)"
                         )
                         
                         # Send reply to Telegram
