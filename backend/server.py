@@ -243,13 +243,16 @@ async def get_user_wallet_with_id(user_id: str) -> Optional[tuple[str, str]]:
                 if account.chain_type == "ethereum" and hasattr(account, 'address'):
                     wallet_address = account.address
                     wallet_id = getattr(account, 'id', None)
+                    wallet_uuid = getattr(account, 'wallet_uuid', None) or getattr(account, 'uuid', None)
                     # Check if wallet has delegated access (session signers)
                     delegated = getattr(account, 'delegated', False)
                     
                     print(f"  📍 Found Ethereum wallet:")
                     print(f"     Address: {wallet_address}")
                     print(f"     ID: {wallet_id}")
+                    print(f"     UUID: {wallet_uuid}")
                     print(f"     Delegated: {delegated}")
+                    print(f"     All account attributes: {dir(account)}")
                     
                     if wallet_id and delegated:
                         print(f"✅ Found delegated wallet: {wallet_address} (ID: {wallet_id[:20]}...)")
