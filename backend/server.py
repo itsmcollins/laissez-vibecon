@@ -555,18 +555,23 @@ async def complete_account_link(
         if original_query and pending_link["platform"] == "telegram":
             print(f"Processing original query: {original_query[:50]}...")
             
-            # Get the bot_token for this user's agent (we need to find which agent they messaged)
-            # We'll need to extract this from the pending_link or store it separately
-            # For now, we'll process the query asynchronously in the background
-            try:
-                await process_original_telegram_query(
-                    telegram_user_id=pending_link["platform_user_id"],
-                    original_query=original_query,
-                    laissez_user_id=user_id
-                )
-            except Exception as query_error:
-                print(f"Error processing original query: {query_error}")
-                # Don't fail the linking if query processing fails
+            bot_token_from_link = pending_link.get("bot_token")
+            chat_id_from_link = pending_link.get("chat_id")
+            
+            if bot_token_from_link and chat_id_from_link:
+                try:
+                    await process_original_telegram_query(
+                        telegram_user_id=pending_link["platform_user_id"],
+                        original_query=original_query,
+                        laissez_user_id=user_id,
+                        bot_token=bot_token_from_link,
+                        chat_id=int(chat_id_from_link)
+                    )
+                except Exception as query_error:
+                    print(f"Error processing original query: {query_error}")
+                    # Don't fail the linking if query processing fails
+            else:
+                print("Missing bot_token or chat_id in pending_link, skipping query processing")
         
         return {
             "success": True,
