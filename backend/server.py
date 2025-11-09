@@ -382,6 +382,7 @@ async def create_agent_config(
         # Insert into Supabase with user_id (wallet address fetched dynamically from Privy)
         data = {
             "user_id": user_id,
+            "name": config.name,
             "url": config.url,
             "bot_token": config.bot_token,
             "price": config.price
