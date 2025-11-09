@@ -460,6 +460,7 @@ async def initiate_account_link(
     telegram_user_id: str,
     agent_name: str,
     agent_price: float,
+    original_query: str | None = None,
 ) -> None:
     """Create a pending link code and prompt the user to link their Telegram account."""
     if not supabase:
@@ -474,12 +475,23 @@ async def initiate_account_link(
     pending_payload = {
         "platform": "telegram",
         "platform_user_id": telegram_user_id,
+        "original_query": original_query or "",
         "bot_token": bot_token,
         "chat_id": str(chat_id),
         "expires_at": expires_at,
     }
 
-    insert_result = supabase.table("pending_links").insert(pending_payload).execute()
+    try:
+        insert_result = supabase.table("pending_links").insert(pending_payload).execute()
+    except Exception as insert_error:
+        print(f"Failed to insert pending link: {insert_error}")
+        await send_telegram_message(
+            bot_token,
+            chat_id,
+            "We couldn't start the account linking flow. Please try again later.",
+        )
+        return
+
     if not insert_result.data:
         await send_telegram_message(
             bot_token,
@@ -849,6 +861,7 @@ async def telegram_webhook(bot_token: str, request: Request):
                 telegram_user_id=telegram_user_id,
                 agent_name=agent_name,
                 agent_price=agent_price,
+                original_query=user_message,
             )
             return {"ok": True}
 
