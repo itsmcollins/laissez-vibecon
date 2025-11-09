@@ -785,15 +785,9 @@ async def complete_account_link(
             }
             supabase.table("linked_accounts").insert(link_data).execute()
         
-        # Add session signers to user's wallet for server-side payments
-        print(f"Setting up session signers for user {user_id[:20]}...")
-        wallet_info = await get_user_wallet_with_id(user_id)
-        if wallet_info:
-            wallet_address, wallet_id = wallet_info
-            # Add session signers (this is idempotent, safe to call multiple times)
-            await add_session_signers(wallet_address, wallet_id)
-        else:
-            print(f"⚠️  Could not set up session signers: No wallet found for user {user_id[:20]}")
+        # Note: Session signers are added from the frontend after successful linking
+        # The frontend uses addSessionSigners() hook to enable server-side wallet access
+        print(f"✓ Account linked for user {user_id[:20]}. Frontend will add session signers.")
         
         # Get original query if it exists
         original_query = pending_link.get("original_query")
