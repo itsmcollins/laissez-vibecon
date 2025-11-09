@@ -320,7 +320,9 @@ curl -X POST http://localhost:8001/api/telegram-webhook/123456:ABC \
 ## Key Features
 
 ### ✅ Auto Wallet Creation
-- Wallets created automatically on agent creation
+- **One wallet per user** (not per agent)
+- Wallets created automatically on first agent creation
+- Wallet reused for all agents created by the same user
 - No manual wallet setup required
 - Base Sepolia testnet for development
 
