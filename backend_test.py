@@ -167,6 +167,9 @@ def test_telegram_webhook_endpoint() -> Dict[str, Any]:
             "chat": {
                 "id": 123456789
             },
+            "from": {
+                "id": 123456789
+            },
             "text": "Hello bot!"
         }
     }
