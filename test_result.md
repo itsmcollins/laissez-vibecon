@@ -88,9 +88,10 @@ metadata:
 
 test_plan:
   current_focus:
-    - "x402 Payment Flow with Privy Server-Side Signing"
     - "Account Linking with Session Signers"
-  stuck_tasks: []
+    - "x402 Payment Flow with Privy Server-Side Signing"
+  stuck_tasks:
+    - "Account Linking with Session Signers"
   test_all: false
   test_priority: "high_first"
   completed_tasks:
