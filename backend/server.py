@@ -798,6 +798,45 @@ async def get_agent_configs(user_id: str = Depends(verify_privy_token)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch configurations: {str(e)}")
 
 
+@app.get("/api/linked-accounts")
+async def get_linked_accounts(user_id: str = Depends(verify_privy_token)):
+    """Get all linked accounts for the authenticated user"""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase not configured")
+    
+    try:
+        response = supabase.table("linked_accounts").select("*").eq("laissez_user_id", user_id).execute()
+        return {"success": True, "data": response.data}
+    except Exception as e:
+        print(f"Error fetching linked accounts: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch linked accounts: {str(e)}")
+
+
+@app.delete("/api/linked-accounts/{account_id}")
+async def delete_linked_account(account_id: int, user_id: str = Depends(verify_privy_token)):
+    """Delete a linked account for the authenticated user"""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase not configured")
+    
+    try:
+        # First verify the account belongs to this user
+        check_response = supabase.table("linked_accounts").select("*").eq("id", account_id).eq("laissez_user_id", user_id).execute()
+        
+        if not check_response.data or len(check_response.data) == 0:
+            raise HTTPException(status_code=404, detail="Linked account not found or does not belong to you")
+        
+        # Delete the account
+        supabase.table("linked_accounts").delete().eq("id", account_id).execute()
+        
+        print(f"✓ Deleted linked account {account_id} for user {user_id[:20]}")
+        return {"success": True, "message": "Linked account removed successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting linked account: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete linked account: {str(e)}")
+
+
 @app.post("/api/link/complete")
 async def complete_account_link(
     link_request: LinkCompleteRequest,
