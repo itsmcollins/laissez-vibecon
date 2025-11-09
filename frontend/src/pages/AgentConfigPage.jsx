@@ -335,46 +335,53 @@ export default function AgentConfigPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {linkedAccounts.map((account) => (
-                  <div
-                    key={account.id}
-                    data-testid={`linked-account-${account.id}`}
-                    className="flex items-center justify-between p-3 border rounded-lg bg-muted/50"
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm capitalize">
-                          {account.platform}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          ID: {account.platform_user_id}
-                        </span>
-                      </div>
-                      {account.created_at && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Linked: {new Date(account.created_at).toLocaleDateString()}
-                        </p>
-                      )}
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      data-testid={`unlink-button-${account.id}`}
-                      onClick={() => handleUnlinkAccount(account.id)}
-                      disabled={unlinkingId === account.id}
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                {linkedAccounts.map((account) => {
+                  // Validate account has required fields
+                  if (!account || !account.id || !account.platform || !account.platform_user_id) {
+                    return null;
+                  }
+                  
+                  return (
+                    <div
+                      key={account.id}
+                      data-testid={`linked-account-${account.id}`}
+                      className="flex items-center justify-between p-3 border rounded-lg bg-muted/50"
                     >
-                      {unlinkingId === account.id ? (
-                        <span className="text-xs">Unlinking...</span>
-                      ) : (
-                        <>
-                          <Trash2 className="h-4 w-4 mr-1" />
-                          <span className="text-xs">Unlink</span>
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                ))}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm capitalize">
+                            {String(account.platform)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            ID: {String(account.platform_user_id)}
+                          </span>
+                        </div>
+                        {account.created_at && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Linked: {new Date(account.created_at).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        data-testid={`unlink-button-${account.id}`}
+                        onClick={() => handleUnlinkAccount(account.id)}
+                        disabled={unlinkingId === account.id}
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      >
+                        {unlinkingId === account.id ? (
+                          <span className="text-xs">Unlinking...</span>
+                        ) : (
+                          <>
+                            <Trash2 className="h-4 w-4 mr-1" />
+                            <span className="text-xs">Unlink</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>
