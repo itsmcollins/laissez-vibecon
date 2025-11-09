@@ -1,10 +1,10 @@
-import React, { useMemo, useState } from 'react';
-import { Minus, Plus } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Minus, Plus, Trash2, Link as LinkIcon } from 'lucide-react';
 import { usePrivy } from '@privy-io/react-auth';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Toaster } from '../components/ui/sonner';
 import { toast } from 'sonner';
 import '../App.css';
@@ -18,6 +18,9 @@ export default function AgentConfigPage() {
     price: 0.001,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [linkedAccounts, setLinkedAccounts] = useState([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
+  const [unlinkingId, setUnlinkingId] = useState(null);
 
   const displayName = useMemo(() => {
     if (!user) return null;
