@@ -59,6 +59,7 @@ else:
 
 # Pydantic models
 class AgentConfig(BaseModel):
+    name: str
     url: str
     bot_token: str
     price: float
