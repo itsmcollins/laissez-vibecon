@@ -13,6 +13,9 @@ import jwt
 from privy import PrivyAPI
 from eth_abi import encode
 
+# Import x402 payment verification module
+from payment_verification import check_and_verify_payment
+
 load_dotenv()
 
 app = FastAPI()
