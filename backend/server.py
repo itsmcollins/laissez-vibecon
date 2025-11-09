@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from supabase import create_client, Client
 import os
@@ -7,8 +8,9 @@ from dotenv import load_dotenv
 import httpx
 import secrets
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Dict, Any
 import jwt
+from privy import PrivyAPI
 
 load_dotenv()
 
@@ -29,8 +31,25 @@ PRIVY_APP_SECRET = os.environ.get("PRIVY_APP_SECRET")
 supabase_url = os.environ.get("SUPABASE_URL")
 supabase_key = os.environ.get("SUPABASE_KEY")
 
+# x402 Configuration
+X402_FACILITATOR_URL = "https://x402.org/facilitator"
+X402_NETWORK = "base-sepolia"
+X402_USDC_ADDRESS = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"  # USDC on Base Sepolia
+
 # Cache for Privy verification key
 _privy_verification_key = None
+
+# Initialize Privy client for wallet creation
+_privy_client = None
+if PRIVY_APP_ID and PRIVY_APP_SECRET:
+    try:
+        _privy_client = PrivyAPI(
+            app_id=PRIVY_APP_ID,
+            app_secret=PRIVY_APP_SECRET
+        )
+        print("✓ Privy client initialized successfully")
+    except Exception as e:
+        print(f"Warning: Failed to initialize Privy client: {e}")
 
 if not supabase_url or not supabase_key:
     print("Warning: Supabase credentials not found in environment variables")
