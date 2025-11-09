@@ -151,20 +151,13 @@ Be concise, helpful, and empathetic about the service disruption."""
         return "I apologize, but I'm unable to process your request at the moment. Please try again later."
 
 
-@app.post("/api/telegram-webhook")
-async def telegram_webhook(request: Request, bot_token: str = None):
+@app.post("/api/telegram-webhook/{bot_token}")
+async def telegram_webhook(bot_token: str, request: Request):
     """
     Receive updates from Telegram and proxy to configured agent URL.
     Falls back to LLM if agent URL fails.
     """
     try:
-        # Get bot_token from query parameter if not provided as function param
-        if not bot_token:
-            bot_token = request.query_params.get("bot_token")
-        
-        if not bot_token:
-            return {"ok": False, "error": "bot_token is required"}
-        
         # Parse the incoming update from Telegram
         update_data = await request.json()
         print(f"\n========== WEBHOOK DEBUG START ==========")
