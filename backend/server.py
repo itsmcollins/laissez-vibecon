@@ -980,9 +980,73 @@ async def telegram_webhook(bot_token: str, request: Request):
                     print(f"Found {len(agent_response.data) if agent_response.data else 0} agents for bot token")
                     
                     if agent_response.data and len(agent_response.data) > 0:
-                        agent_url = agent_response.data[0]["url"]
+                        agent = agent_response.data[0]
+                        agent_url = agent["url"]
+                        agent_price = agent.get("price", 0)
+                        agent_creator_user_id = agent.get("user_id")
                         
-                        # Try to proxy to agent URL
+                        # Handle payment if required
+                        tx_hash = None
+                        if agent_price and agent_price > 0 and agent_creator_user_id:
+                            print(f"💰 Payment required: ${agent_price} USDC")
+                            
+                            # Get buyer's wallet
+                            buyer_wallet_info = await get_user_wallet_with_id(laissez_user_id)
+                            if not buyer_wallet_info:
+                                response_text = "❌ Error: Could not find your wallet. Please contact support."
+                                await send_telegram_message(bot_token, chat_id, response_text)
+                                return {"ok": True}
+                            
+                            buyer_address, buyer_wallet_id = buyer_wallet_info
+                            
+                            # Check buyer's balance
+                            buyer_balance = await check_usdc_balance(buyer_address)
+                            if buyer_balance is None:
+                                response_text = "❌ Error: Could not check your wallet balance. Please try again."
+                                await send_telegram_message(bot_token, chat_id, response_text)
+                                return {"ok": True}
+                            
+                            # Check if sufficient balance
+                            if buyer_balance < agent_price:
+                                response_text = (
+                                    f"💰 Insufficient balance!\n\n"
+                                    f"Your balance: ${buyer_balance:.6f} USDC\n"
+                                    f"Required: ${agent_price:.6f} USDC\n\n"
+                                    f"Please add funds to your wallet:\n"
+                                    f"🔗 https://faucet.circle.com\n\n"
+                                    f"Your wallet address:\n"
+                                    f"`{buyer_address}`\n\n"
+                                    f"⚠️ Make sure to select Base Sepolia network!\n\n"
+                                    f"Once funded, try sending your message again."
+                                )
+                                await send_telegram_message(bot_token, chat_id, response_text)
+                                return {"ok": True}
+                            
+                            # Get creator's wallet address
+                            creator_wallet = await get_user_wallet_address(agent_creator_user_id)
+                            if not creator_wallet:
+                                response_text = "❌ Error: Could not find agent creator's wallet. Please contact support."
+                                await send_telegram_message(bot_token, chat_id, response_text)
+                                return {"ok": True}
+                            
+                            print(f"💸 Sending payment: ${agent_price} from {buyer_address} to {creator_wallet}")
+                            
+                            # Send payment
+                            tx_hash = await send_usdc_payment(
+                                wallet_id=buyer_wallet_id,
+                                wallet_address=buyer_address,
+                                recipient_address=creator_wallet,
+                                amount_usdc=agent_price
+                            )
+                            
+                            if not tx_hash:
+                                response_text = "❌ Payment failed. Please try again or contact support."
+                                await send_telegram_message(bot_token, chat_id, response_text)
+                                return {"ok": True}
+                            
+                            print(f"✓ Payment successful: {tx_hash}")
+                        
+                        # Payment successful or not required - call agent
                         try:
                             async with httpx.AsyncClient(timeout=30.0) as client:
                                 agent_result = await client.post(
@@ -1003,6 +1067,10 @@ async def telegram_webhook(bot_token: str, request: Request):
                         except Exception as proxy_error:
                             print(f"Agent URL proxy error: {proxy_error}")
                             response_text = await get_llm_fallback_response(user_message)
+                        
+                        # Append transaction hash if payment was made
+                        if tx_hash:
+                            response_text += f"\n\n💳 [View transaction](https://sepolia.basescan.org/tx/{tx_hash})"
                     else:
                         response_text = "Agent configuration not found. Please set up your agent first."
                 
