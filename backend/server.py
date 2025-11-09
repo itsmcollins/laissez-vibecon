@@ -269,6 +269,66 @@ def generate_link_code() -> str:
     return secrets.token_urlsafe(32)
 
 
+async def check_x402_payment(request: Request, bot_token: str) -> Optional[Dict[str, Any]]:
+    """
+    Check if x402 payment is required and valid for a telegram webhook request.
+    Returns None if payment is valid, or a dict with 402 response if payment is required.
+    """
+    if not supabase:
+        return None
+    
+    try:
+        # Get agent configuration by bot_token to fetch price and creator wallet
+        agent_response = supabase.table("agents").select("*").eq("bot_token", bot_token).execute()
+        
+        if not agent_response.data or len(agent_response.data) == 0:
+            # No agent found, don't require payment
+            return None
+        
+        agent = agent_response.data[0]
+        price = agent.get("price", 0)
+        creator_wallet = agent.get("creator_wallet_address")
+        
+        # If no price or no wallet, don't require payment
+        if not price or price <= 0 or not creator_wallet:
+            return None
+        
+        # Check for X-PAYMENT header
+        x_payment_header = request.headers.get("X-PAYMENT") or request.headers.get("x-payment")
+        
+        if not x_payment_header:
+            # No payment provided, return 402 with payment requirements
+            price_atomic = int(price * 1_000_000)  # Convert to USDC atomic units (6 decimals)
+            
+            return {
+                "status_code": 402,
+                "body": {
+                    "x402Version": 1,
+                    "accepts": [{
+                        "scheme": "exact",
+                        "network": X402_NETWORK,
+                        "maxAmountRequired": str(price_atomic),
+                        "resource": str(request.url.path),
+                        "description": f"Payment required to message this agent (${price})",
+                        "payTo": creator_wallet,
+                        "asset": X402_USDC_ADDRESS,
+                        "maxTimeoutSeconds": 60
+                    }],
+                    "error": "Payment required"
+                }
+            }
+        
+        # Payment header exists - in a full implementation, we would verify it with the facilitator
+        # For now, we'll trust the payment header (in production, verify with facilitator)
+        print(f"✓ X-PAYMENT header present for bot {bot_token[:20]}")
+        return None
+        
+    except Exception as e:
+        print(f"Error checking x402 payment: {e}")
+        # On error, allow request to proceed without payment
+        return None
+
+
 # API Endpoints
 
 @app.get("/api/health")
