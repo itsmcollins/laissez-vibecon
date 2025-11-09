@@ -151,8 +151,8 @@ Be concise, helpful, and empathetic about the service disruption."""
         return "I apologize, but I'm unable to process your request at the moment. Please try again later."
 
 
-@app.post("/api/telegram-webhook/{bot_token}")
-async def telegram_webhook(bot_token: str, request: Request):
+@app.post("/api/telegram-webhook")
+async def telegram_webhook(request: Request, bot_token: str = None):
     """
     Receive updates from Telegram and proxy to configured agent URL.
     Falls back to LLM if agent URL fails.
