@@ -28,6 +28,8 @@ app.add_middleware(
 # Configuration
 PRIVY_APP_ID = os.environ.get("PRIVY_APP_ID")
 PRIVY_APP_SECRET = os.environ.get("PRIVY_APP_SECRET")
+LAISSEZ_KEY_QUORUM_ID = os.environ.get("LAISSEZ_KEY_QUORUM_ID")
+LAISSEZ_AUTHORIZATION_KEY = os.environ.get("LAISSEZ_AUTHORIZATION_KEY")
 supabase_url = os.environ.get("SUPABASE_URL")
 supabase_key = os.environ.get("SUPABASE_KEY")
 
@@ -35,6 +37,8 @@ supabase_key = os.environ.get("SUPABASE_KEY")
 X402_FACILITATOR_URL = "https://x402.org/facilitator"
 X402_NETWORK = "base-sepolia"
 X402_USDC_ADDRESS = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"  # USDC on Base Sepolia
+USDC_DECIMALS = 6  # USDC has 6 decimals
+BASE_SEPOLIA_CHAIN_ID = 84532
 
 # Cache for Privy verification key
 _privy_verification_key = None
