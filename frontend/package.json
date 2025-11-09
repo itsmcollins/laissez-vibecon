@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "@privy-io/react-auth": "^2.2.0",
+    "buffer": "^6.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.553.0",
