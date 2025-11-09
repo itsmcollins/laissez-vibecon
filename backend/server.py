@@ -91,7 +91,7 @@ async def create_agent_config(config: AgentConfig, request: Request):
         else:
             host = request.headers.get("host", "localhost:8001")
         
-        webhook_url = f"{scheme}://{host}/api/telegram-webhook?bot_token={config.bot_token}"
+        webhook_url = f"{scheme}://{host}/api/telegram-webhook/{config.bot_token}"
         
         print(f"Setting webhook URL: {webhook_url} (detected from request headers)")
         webhook_result = await setup_telegram_webhook(config.bot_token, webhook_url)
