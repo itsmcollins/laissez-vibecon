@@ -20,7 +20,9 @@ root.render(
       config={{
         loginMethods: ['google'],
         appearance: { theme: 'dark' },
-        embeddedWallets: { createOnLogin: 'off' },
+        embeddedWallets: { 
+          createOnLogin: 'users-without-wallets' // Auto-create wallet for new users
+        },
       }}
     >
       <BrowserRouter>
