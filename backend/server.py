@@ -1058,10 +1058,14 @@ async def telegram_webhook(bot_token: str, request: Request):
                             print(f"💳 Payment required: ${agent_price} USDC")
                             
                             # Get buyer's wallet
+                            print(f"🔍 Getting buyer's wallet for user: {laissez_user_id[:20]}...")
                             buyer_wallet_info = await get_user_wallet_with_id(laissez_user_id)
+                            
                             if not buyer_wallet_info:
-                                response_text = "❌ Error: Could not find your wallet. Please contact support."
+                                response_text = "❌ Error: Could not find your delegated wallet. Please re-link your account to enable payments."
+                                print(f"❌ {response_text}")
                                 await send_telegram_message(bot_token, chat_id, response_text)
+                                print(f"{'='*60}\n")
                                 return {"ok": True}
                             
                             buyer_address, buyer_wallet_id = buyer_wallet_info
