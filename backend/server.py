@@ -184,14 +184,17 @@ async def telegram_webhook(bot_token: str, request: Request):
                     print(f"Linked account query result: {linked_account.data}")
                     
                     if not linked_account.data or len(linked_account.data) == 0:
+                        print(">>> NO LINKED ACCOUNT - Generating pending link")
                         # No linked account found, generate pending link
                         pending_link = supabase.table("pending_links").insert({
                             "platform": "telegram",
                             "platform_user_id": telegram_user_id
                         }).execute()
+                        print(f"Pending link insert result: {pending_link.data}")
                         
                         if pending_link.data and len(pending_link.data) > 0:
                             link_code = pending_link.data[0]["code"]
+                            print(f"Generated link code: {link_code}")
                             
                             # Determine the base URL for the link
                             forwarded_host = request.headers.get("x-forwarded-host", "")
@@ -208,8 +211,10 @@ async def telegram_webhook(bot_token: str, request: Request):
                             
                             link_url = f"{scheme}://{host}/link?code={link_code}"
                             response_text = f"Connect to this agent with a Laissez account here: {link_url}"
+                            print(f"Will send connection link: {link_url}")
                         else:
                             response_text = "Unable to generate connection link. Please try again."
+                            print("ERROR: Failed to create pending link record")
                     else:
                         # Account is linked, proceed with agent proxy
                         # Query for agent by bot_token
