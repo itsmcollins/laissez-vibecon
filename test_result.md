@@ -34,15 +34,18 @@ backend:
 
   - task: "x402 Payment Flow with Privy Server-Side Signing"
     implemented: true
-    working: "NA"
+    working: false
     file: "backend/server.py"
-    stuck_count: 0
+    stuck_count: 1
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Implemented x402 payment flow: 1) Auto-add session signers on account linking 2) Check USDC balance before processing message 3) Send payment via Privy API if sufficient balance 4) Handle insufficient balance with faucet link 5) Append transaction hash to response. Ready for testing."
+      - working: false
+        agent: "testing"
+        comment: "❌ CRITICAL ISSUE - Payment flow fails due to session signers not being added during account linking. Backend logs show: '⚠️ Wallet 0x456B421b6C44c8fE148280f6F84DF75D2473c472 found but not delegated'. The payment logic is correctly implemented and triggers ('💰 Payment required: $0.001 USDC'), but fails because get_user_wallet_with_id() returns None when wallet is not delegated. Session signers are not being added during /api/link/complete flow."
 
   - task: "Account Linking with Session Signers"
     implemented: true
