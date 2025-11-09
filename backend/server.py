@@ -504,14 +504,27 @@ async def complete_account_link(
 async def telegram_webhook(bot_token: str, request: Request):
     """
     Receive updates from Telegram and proxy to configured agent URL.
+    Requires x402 payment if agent has a price configured.
     Checks for linked accounts and creates pending links if needed.
     Falls back to LLM if agent URL fails.
     """
     try:
+        # Check x402 payment requirement FIRST
+        payment_check = await check_x402_payment(request, bot_token)
+        if payment_check:
+            # Payment required but not provided or invalid
+            return JSONResponse(
+                status_code=payment_check["status_code"],
+                content=payment_check["body"],
+                headers={"Content-Type": "application/json"}
+            )
+        
+        # Payment is valid or not required, proceed with webhook processing
         # Parse the incoming update from Telegram
         update_data = await request.json()
         print(f"\n{'='*60}")
         print(f"Telegram webhook received for bot token: {bot_token[:20]}...")
+        print(f"✓ Payment requirement satisfied")
         
         # Check if there's a message with text
         if "message" in update_data and "text" in update_data["message"]:
