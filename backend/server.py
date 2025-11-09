@@ -369,9 +369,10 @@ async def create_agent_config(
         if config.price < 0.001:
             raise HTTPException(status_code=400, detail="Price must be at least $0.001")
         
-        # Get or create Privy wallet for the user on Base Sepolia
-        print(f"Getting/creating wallet for user: {user_id[:20]}...")
-        wallet_address = await get_or_create_user_wallet(user_id)
+        # Ensure user has a wallet (create if needed) - but don't store in DB
+        # We'll fetch it dynamically when needed for payments
+        print(f"Ensuring user has a wallet: {user_id[:20]}...")
+        wallet_address = await get_user_wallet_address(user_id)
         
         if not wallet_address:
             raise HTTPException(
@@ -379,15 +380,14 @@ async def create_agent_config(
                 detail="Failed to create wallet. Please try again."
             )
         
-        print(f"✓ Using wallet address: {wallet_address}")
+        print(f"✓ User has wallet: {wallet_address}")
         
-        # Insert into Supabase with user_id and creator_wallet_address
+        # Insert into Supabase with user_id (wallet address fetched dynamically from Privy)
         data = {
             "user_id": user_id,
             "url": config.url,
             "bot_token": config.bot_token,
-            "price": config.price,
-            "creator_wallet_address": wallet_address
+            "price": config.price
         }
         
         response = supabase.table("agents").insert(data).execute()
