@@ -501,6 +501,7 @@ async def get_agent_configs(user_id: str = Depends(verify_privy_token)):
 @app.post("/api/link/complete")
 async def complete_account_link(
     link_request: LinkCompleteRequest,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(verify_privy_token)
 ):
     """Complete account linking by associating a code with a Privy user ID"""
