@@ -1018,13 +1018,16 @@ async def telegram_webhook(bot_token: str, request: Request):
             # Check if telegram account is linked
             if supabase:
                 try:
+                    print(f"🔍 Checking if Telegram user {telegram_user_id} is linked...")
                     linked_account = supabase.table("linked_accounts").select("*").eq(
                         "platform", "telegram"
                     ).eq("platform_user_id", telegram_user_id).execute()
                     
+                    print(f"📊 Query result: Found {len(linked_account.data) if linked_account.data else 0} linked accounts")
+                    
                     if not linked_account.data or len(linked_account.data) == 0:
                         # Not linked - create pending link and show price
-                        print(f"Telegram user {telegram_user_id} not linked, creating pending link...")
+                        print(f"❌ Telegram user {telegram_user_id} NOT linked, creating pending link...")
                         
                         # Get agent configuration to show name and price in message
                         agent_response = supabase.table("agents").select("name, price").eq(
