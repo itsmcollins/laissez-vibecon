@@ -32,6 +32,30 @@ backend:
         agent: "testing"
         comment: "✅ PASS - LLM FALLBACK FUNCTIONALITY VERIFIED - Webhook endpoint successfully proxies messages to agent URLs and falls back to GPT-5-mini when agent URL fails. Test confirmed: 1) Agent lookup from Supabase working correctly 2) Agent URL proxy attempted (logs show 'Agent URL proxy error') 3) LLM fallback triggered automatically 4) Webhook returns {ok: true} in all scenarios 5) Backend logs confirm proper error handling and fallback execution. All three test scenarios from review request passed successfully."
 
+  - task: "x402 Payment Flow with Privy Server-Side Signing"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented x402 payment flow: 1) Auto-add session signers on account linking 2) Check USDC balance before processing message 3) Send payment via Privy API if sufficient balance 4) Handle insufficient balance with faucet link 5) Append transaction hash to response. Ready for testing."
+
+  - task: "Account Linking with Session Signers"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Updated /api/link/complete endpoint to automatically add session signers (server-side wallet delegation) when user completes account linking. Uses LAISSEZ_KEY_QUORUM_ID and LAISSEZ_AUTHORIZATION_KEY for unrestricted server-side wallet access."
+
   - task: "Health Check Endpoint"
     implemented: true
     working: true
