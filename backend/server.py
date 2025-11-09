@@ -540,14 +540,20 @@ async def telegram_webhook(bot_token: str, request: Request):
                         # Not linked - create pending link and show price
                         print(f"Telegram user {telegram_user_id} not linked, creating pending link...")
                         
-                        # Get agent configuration to show price in message
-                        agent_response = supabase.table("agents").select("price").eq(
+                        # Get agent configuration to show name and price in message
+                        agent_response = supabase.table("agents").select("name, price").eq(
                             "bot_token", bot_token
                         ).execute()
                         
+                        agent_name = "this Agent"
                         price_display = ""
                         if agent_response.data and len(agent_response.data) > 0:
-                            price = agent_response.data[0].get("price", 0)
+                            agent_data = agent_response.data[0]
+                            # Get agent name
+                            if agent_data.get("name"):
+                                agent_name = agent_data["name"]
+                            # Get price
+                            price = agent_data.get("price", 0)
                             if price and price > 0:
                                 price_display = f"💰 This agent costs ${price:.3f} per message to use.\n\n"
                         
