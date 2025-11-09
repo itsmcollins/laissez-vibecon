@@ -487,14 +487,35 @@ async def complete_account_link(
             }
             supabase.table("linked_accounts").insert(link_data).execute()
         
+        # Get original query if it exists
+        original_query = pending_link.get("original_query")
+        
         # Delete the pending link
         supabase.table("pending_links").delete().eq("code", link_request.code).execute()
+        
+        # If there was an original query, process it and send response to user
+        if original_query and pending_link["platform"] == "telegram":
+            print(f"Processing original query: {original_query[:50]}...")
+            
+            # Get the bot_token for this user's agent (we need to find which agent they messaged)
+            # We'll need to extract this from the pending_link or store it separately
+            # For now, we'll process the query asynchronously in the background
+            try:
+                await process_original_telegram_query(
+                    telegram_user_id=pending_link["platform_user_id"],
+                    original_query=original_query,
+                    laissez_user_id=user_id
+                )
+            except Exception as query_error:
+                print(f"Error processing original query: {query_error}")
+                # Don't fail the linking if query processing fails
         
         return {
             "success": True,
             "message": "Account linked successfully",
             "platform": pending_link["platform"],
-            "platform_user_id": pending_link["platform_user_id"]
+            "platform_user_id": pending_link["platform_user_id"],
+            "processed_original_query": bool(original_query)
         }
     
     except HTTPException:
