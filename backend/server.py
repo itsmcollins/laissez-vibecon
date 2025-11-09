@@ -366,8 +366,8 @@ async def create_agent_config(
         if config.price < 0.001:
             raise HTTPException(status_code=400, detail="Price must be at least $0.001")
         
-        # Check if user has a wallet - required for receiving payments
-        print(f"Checking if user has a wallet: {user_id[:20]}...")
+        # Check if user has a wallet - required for receiving payments  
+        print(f"✓ Checking if user has a wallet: {user_id[:20]}...")
         wallet_address = await get_user_wallet_address(user_id)
         
         if not wallet_address:
