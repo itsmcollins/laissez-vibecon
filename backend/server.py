@@ -1096,10 +1096,13 @@ async def telegram_webhook(bot_token: str, request: Request):
                                     f"⚠️ Make sure to select Base Sepolia network!\n\n"
                                     f"Once funded, try sending your message again."
                                 )
+                                print(f"⚠️  Insufficient balance: ${buyer_balance:.6f} < ${agent_price:.6f}")
                                 await send_telegram_message(bot_token, chat_id, response_text)
+                                print(f"{'='*60}\n")
                                 return {"ok": True}
                             
                             # Get creator's wallet address
+                            print(f"🔍 Getting creator's wallet for user: {agent_creator_user_id[:20]}...")
                             creator_wallet = await get_user_wallet_address(agent_creator_user_id)
                             if not creator_wallet:
                                 response_text = "❌ Error: Could not find agent creator's wallet. Please contact support."
