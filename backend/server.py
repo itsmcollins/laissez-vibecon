@@ -219,6 +219,234 @@ async def get_user_wallet_address(user_id: str) -> Optional[str]:
         return None
 
 
+async def get_user_wallet_with_id(user_id: str) -> Optional[tuple[str, str]]:
+    """
+    Get a user's wallet address AND wallet ID from Privy.
+    Returns (wallet_address, wallet_id) tuple or None if user has no wallet.
+    """
+    if not _privy_client:
+        print("ERROR: Privy client not initialized")
+        return None
+    
+    try:
+        # Get user's data from Privy
+        print(f"Fetching user data with wallet ID for: {user_id[:20]}...")
+        user_data = _privy_client.users.get(user_id)
+        
+        # Check if user has an embedded Ethereum wallet with delegated access
+        for account in user_data.linked_accounts:
+            if account.type == "wallet" and hasattr(account, 'chain_type'):
+                if account.chain_type == "ethereum" and hasattr(account, 'address'):
+                    wallet_address = account.address
+                    wallet_id = getattr(account, 'id', None)
+                    # Check if wallet has delegated access (session signers)
+                    delegated = getattr(account, 'delegated', False)
+                    
+                    if wallet_id and delegated:
+                        print(f"✓ Found delegated wallet: {wallet_address} (ID: {wallet_id[:20]}...)")
+                        return (wallet_address, wallet_id)
+                    elif wallet_id and not delegated:
+                        print(f"⚠️  Wallet {wallet_address} found but not delegated")
+                        return None
+        
+        # No wallet found
+        print(f"⚠️  No delegated wallet found for user {user_id[:20]}")
+        return None
+        
+    except Exception as e:
+        print(f"ERROR: Failed to fetch wallet with ID for user {user_id[:20]}: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+async def check_usdc_balance(wallet_address: str) -> Optional[float]:
+    """
+    Check USDC balance for a wallet on Base Sepolia.
+    Returns balance in USDC (not atomic units) or None on error.
+    """
+    try:
+        # Create RPC call to get balance
+        async with httpx.AsyncClient() as client:
+            # Encode balanceOf(address) call
+            # Function signature: balanceOf(address) returns (uint256)
+            # We need to manually construct the call
+            
+            # Using Base Sepolia RPC
+            rpc_url = "https://sepolia.base.org"
+            
+            # Encode the function call
+            # balanceOf function selector: 0x70a08231
+            # Followed by the address (32 bytes, padded)
+            address_padded = wallet_address[2:].lower().zfill(64)  # Remove 0x and pad
+            data = f"0x70a08231{address_padded}"
+            
+            response = await client.post(
+                rpc_url,
+                json={
+                    "jsonrpc": "2.0",
+                    "method": "eth_call",
+                    "params": [
+                        {
+                            "to": X402_USDC_ADDRESS,
+                            "data": data
+                        },
+                        "latest"
+                    ],
+                    "id": 1
+                }
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if "result" in result:
+                    # Parse the hex result
+                    balance_hex = result["result"]
+                    balance_atomic = int(balance_hex, 16)
+                    # Convert from atomic units to USDC
+                    balance_usdc = balance_atomic / (10 ** USDC_DECIMALS)
+                    print(f"✓ Balance for {wallet_address}: {balance_usdc} USDC")
+                    return balance_usdc
+            
+            print(f"⚠️  Failed to check balance: {response.text[:200]}")
+            return None
+            
+    except Exception as e:
+        print(f"ERROR: Failed to check USDC balance: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+async def add_session_signers(wallet_address: str, wallet_id: str) -> bool:
+    """
+    Add session signers (server-side delegation) to a user's wallet using Privy API.
+    Returns True if successful, False otherwise.
+    """
+    if not LAISSEZ_KEY_QUORUM_ID or not LAISSEZ_AUTHORIZATION_KEY:
+        print("ERROR: Session signer credentials not configured")
+        return False
+    
+    try:
+        print(f"Adding session signers to wallet {wallet_address}...")
+        
+        # Use Privy API to add session signers
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"https://api.privy.io/v1/wallets/{wallet_id}/session_signers",
+                headers={
+                    "Authorization": f"Bearer {PRIVY_APP_SECRET}",
+                    "privy-app-id": PRIVY_APP_ID,
+                },
+                json={
+                    "signers": [
+                        {
+                            "signer_id": LAISSEZ_KEY_QUORUM_ID,
+                            "policy_ids": []  # No policies - unrestricted access
+                        }
+                    ]
+                }
+            )
+            
+            if response.status_code in [200, 201]:
+                print(f"✓ Session signers added successfully to {wallet_address}")
+                return True
+            else:
+                print(f"⚠️  Failed to add session signers: {response.status_code} - {response.text[:200]}")
+                return False
+                
+    except Exception as e:
+        print(f"ERROR: Failed to add session signers: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+async def send_usdc_payment(
+    wallet_id: str,
+    wallet_address: str,
+    recipient_address: str,
+    amount_usdc: float
+) -> Optional[str]:
+    """
+    Send USDC payment from user's wallet to recipient using Privy server-side signing.
+    Returns transaction hash or None on error.
+    """
+    if not LAISSEZ_AUTHORIZATION_KEY:
+        print("ERROR: Authorization key not configured")
+        return None
+    
+    try:
+        print(f"Sending {amount_usdc} USDC from {wallet_address} to {recipient_address}...")
+        
+        # Convert USDC amount to atomic units
+        amount_atomic = int(amount_usdc * (10 ** USDC_DECIMALS))
+        
+        # Encode transfer function call using viem
+        data = encodeFunctionData(
+            abi=erc20Abi,
+            functionName="transfer",
+            args=[recipient_address, amount_atomic]
+        )
+        
+        # Use Privy's server-side signing API
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"https://api.privy.io/v1/wallets/{wallet_id}/rpc",
+                headers={
+                    "Authorization": f"Bearer {PRIVY_APP_SECRET}",
+                    "privy-app-id": PRIVY_APP_ID,
+                },
+                json={
+                    "method": "eth_sendTransaction",
+                    "params": {
+                        "caip2": f"eip155:{BASE_SEPOLIA_CHAIN_ID}",
+                        "params": {
+                            "transaction": {
+                                "to": X402_USDC_ADDRESS,
+                                "value": "0x0",
+                                "data": data,
+                                "chain_id": BASE_SEPOLIA_CHAIN_ID
+                            }
+                        },
+                        "sponsor": True,  # Enable gas sponsorship
+                        "authorization_context": {
+                            "authorization_private_keys": [LAISSEZ_AUTHORIZATION_KEY]
+                        }
+                    }
+                }
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                tx_hash = result.get("hash")
+                if tx_hash:
+                    print(f"✓ Transaction sent: {tx_hash}")
+                    return tx_hash
+            
+            print(f"⚠️  Transaction failed: {response.status_code} - {response.text[:300]}")
+            return None
+            
+    except Exception as e:
+        print(f"ERROR: Failed to send USDC payment: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+async def send_telegram_message(bot_token: str, chat_id: int, text: str):
+    """Helper function to send a message to Telegram"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                json={"chat_id": chat_id, "text": text}
+            )
+            print(f"✓ Telegram message sent: {response.status_code}")
+    except Exception as e:
+        print(f"⚠️  Failed to send Telegram message: {e}")
+
+
 async def process_original_telegram_query(telegram_user_id: str, original_query: str, laissez_user_id: str, bot_token: str, chat_id: int):
     """
     Process the original query that triggered account linking.
