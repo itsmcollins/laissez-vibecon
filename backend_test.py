@@ -11,7 +11,8 @@ import os
 from typing import Dict, Any
 
 # Get the backend URL from environment or use default
-BACKEND_URL = "http://localhost:8001"
+# Use the preview URL format from frontend/.env
+BACKEND_URL = os.environ.get("BACKEND_URL", "https://agent-payment-api.preview.emergentagent.com")
 
 def test_health_check() -> Dict[str, Any]:
     """Test the health check endpoint"""
