@@ -29,6 +29,79 @@ export default function AgentConfigPage() {
     return user.id;
   }, [user]);
 
+  // Fetch linked accounts on mount
+  useEffect(() => {
+    fetchLinkedAccounts();
+  }, []);
+
+  const fetchLinkedAccounts = async () => {
+    try {
+      setLoadingAccounts(true);
+      const token = await getAccessToken();
+      if (!token) {
+        console.error('No access token available');
+        return;
+      }
+
+      const response = await fetch('/api/linked-accounts', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setLinkedAccounts(data.data || []);
+      } else {
+        console.error('Failed to fetch linked accounts:', data);
+      }
+    } catch (error) {
+      console.error('Error fetching linked accounts:', error);
+    } finally {
+      setLoadingAccounts(false);
+    }
+  };
+
+  const handleUnlinkAccount = async (accountId) => {
+    if (!window.confirm('Are you sure you want to unlink this account? You will need to link it again to use it.')) {
+      return;
+    }
+
+    try {
+      setUnlinkingId(accountId);
+      const token = await getAccessToken();
+      if (!token) {
+        toast.error('Missing authentication token');
+        return;
+      }
+
+      const response = await fetch(`/api/linked-accounts/${accountId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        toast.success('Account unlinked successfully');
+        // Refresh the list
+        fetchLinkedAccounts();
+      } else {
+        toast.error('Failed to unlink account', {
+          description: data.detail || 'Please try again.',
+        });
+      }
+    } catch (error) {
+      toast.error('Network error', {
+        description: 'Unable to unlink account. Please try again.',
+      });
+      console.error('Error unlinking account:', error);
+    } finally {
+      setUnlinkingId(null);
+    }
+  };
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
