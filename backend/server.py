@@ -1069,8 +1069,10 @@ async def telegram_webhook(bot_token: str, request: Request):
                                 return {"ok": True}
                             
                             buyer_address, buyer_wallet_id = buyer_wallet_info
+                            print(f"✅ Buyer wallet: {buyer_address} (ID: {buyer_wallet_id[:20]}...)")
                             
                             # Check buyer's balance
+                            print(f"💵 Checking USDC balance for {buyer_address}...")
                             buyer_balance = await check_usdc_balance(buyer_address)
                             if buyer_balance is None:
                                 response_text = "❌ Error: Could not check your wallet balance. Please try again."
