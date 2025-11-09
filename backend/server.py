@@ -1030,7 +1030,8 @@ async def telegram_webhook(bot_token: str, request: Request):
                     
                     # Account is linked - get laissez_user_id (Privy user ID)
                     laissez_user_id = linked_account.data[0]["laissez_user_id"]
-                    print(f"✓ Telegram user {telegram_user_id} linked to Privy user {laissez_user_id[:20]}...")
+                    print(f"\n{'='*60}")
+                    print(f"✅ Telegram user {telegram_user_id} linked to Privy user {laissez_user_id[:20]}...")
                     
                     # Get agent configuration by bot_token (NOT filtered by user_id)
                     # Any authenticated user can message any agent
@@ -1038,7 +1039,7 @@ async def telegram_webhook(bot_token: str, request: Request):
                         "bot_token", bot_token
                     ).execute()
                     
-                    print(f"Found {len(agent_response.data) if agent_response.data else 0} agents for bot token")
+                    print(f"📋 Found {len(agent_response.data) if agent_response.data else 0} agents for bot token")
                     
                     if agent_response.data and len(agent_response.data) > 0:
                         agent = agent_response.data[0]
@@ -1046,10 +1047,15 @@ async def telegram_webhook(bot_token: str, request: Request):
                         agent_price = agent.get("price", 0)
                         agent_creator_user_id = agent.get("user_id")
                         
+                        print(f"📋 Agent details:")
+                        print(f"   URL: {agent_url}")
+                        print(f"   Price: ${agent_price}")
+                        print(f"   Creator: {agent_creator_user_id[:20] if agent_creator_user_id else 'N/A'}...")
+                        
                         # Handle payment if required
                         tx_hash = None
                         if agent_price and agent_price > 0 and agent_creator_user_id:
-                            print(f"💰 Payment required: ${agent_price} USDC")
+                            print(f"💳 Payment required: ${agent_price} USDC")
                             
                             # Get buyer's wallet
                             buyer_wallet_info = await get_user_wallet_with_id(laissez_user_id)
