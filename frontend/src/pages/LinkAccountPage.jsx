@@ -94,44 +94,53 @@ export default function LinkAccountPage() {
         console.log('Found wallet account:', walletAccount);
         
         if (walletAccount && walletAccount.address) {
-          try {
-            console.log(`⏳ Adding session signer to wallet: ${walletAccount.address}`);
-            console.log('Calling addSessionSigners with:', {
-              address: walletAccount.address,
-              signers: [{
-                signerId: KEY_QUORUM_ID,
-                policyIds: []
-              }]
-            });
-            
-            const result = await addSessionSigners({
-              address: walletAccount.address,
-              signers: [
-                {
+          // CHECK if wallet is already delegated before attempting to add signers
+          if (walletAccount.delegated === true) {
+            console.log('✅ Wallet already has session signers (delegated: true), skipping addSessionSigners');
+            console.log('Wallet address:', walletAccount.address);
+            toast.success('Wallet already configured for payments');
+          } else {
+            // Wallet NOT delegated - add session signers
+            try {
+              console.log(`⏳ Adding session signer to wallet: ${walletAccount.address}`);
+              console.log('Wallet delegated status:', walletAccount.delegated);
+              console.log('Calling addSessionSigners with:', {
+                address: walletAccount.address,
+                signers: [{
                   signerId: KEY_QUORUM_ID,
-                  policyIds: [] // No policies - unrestricted access for payments
-                }
-              ]
-            });
-            
-            console.log('✅ Session signers added successfully!');
-            console.log('addSessionSigners result:', result);
-            toast.success('Wallet configured for payments');
-          } catch (signerError) {
-            console.error('❌ Failed to add session signers:', signerError);
-            console.error('Error details:', {
-              name: signerError?.name,
-              message: signerError?.message,
-              stack: signerError?.stack
-            });
-            
-            // Check if it's a duplicate signer error (which is fine - signers already added)
-            if (signerError.message && signerError.message.includes('Duplicate signer')) {
-              console.log('ℹ️  Session signers already added (duplicate error ignored)');
-              toast.success('Wallet already configured for payments');
-            } else {
-              // Real error - show to user
-              toast.error('Wallet delegation failed: ' + signerError.message);
+                  policyIds: []
+                }]
+              });
+              
+              const result = await addSessionSigners({
+                address: walletAccount.address,
+                signers: [
+                  {
+                    signerId: KEY_QUORUM_ID,
+                    policyIds: [] // No policies - unrestricted access for payments
+                  }
+                ]
+              });
+              
+              console.log('✅ Session signers added successfully!');
+              console.log('addSessionSigners result:', result);
+              toast.success('Wallet configured for payments');
+            } catch (signerError) {
+              console.error('❌ Failed to add session signers:', signerError);
+              console.error('Error details:', {
+                name: signerError?.name,
+                message: signerError?.message,
+                stack: signerError?.stack
+              });
+              
+              // Check if it's a duplicate signer error (shouldn't happen now but keep as safety)
+              if (signerError.message && signerError.message.includes('Duplicate signer')) {
+                console.log('ℹ️  Session signers already added (duplicate error - this should not happen with our check)');
+                toast.success('Wallet already configured for payments');
+              } else {
+                // Real error - show to user
+                toast.error('Wallet delegation failed: ' + signerError.message);
+              }
             }
           }
         } else {
