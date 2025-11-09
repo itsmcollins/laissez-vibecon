@@ -214,6 +214,64 @@ async def get_user_wallet_address(user_id: str) -> Optional[str]:
         return None
 
 
+async def process_original_telegram_query(telegram_user_id: str, original_query: str, laissez_user_id: str, bot_token: str, chat_id: int):
+    """
+    Process the original query that triggered account linking.
+    Sends the agent's response back to the user on Telegram.
+    """
+    try:
+        print(f"Processing original query for Telegram user {telegram_user_id}...")
+        
+        # Get agent configuration
+        agent_response = supabase.table("agents").select("*").eq("bot_token", bot_token).execute()
+        
+        if not agent_response.data or len(agent_response.data) == 0:
+            print("No agent found for bot_token")
+            return
+        
+        agent_url = agent_response.data[0]["url"]
+        print(f"Proxying to agent URL: {agent_url}")
+        
+        # Try to proxy to agent URL
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                agent_result = await client.post(
+                    agent_url,
+                    json={"input": original_query}
+                )
+                
+                if agent_result.status_code == 200:
+                    agent_data = agent_result.json()
+                    if "output" in agent_data:
+                        response_text = agent_data["output"]
+                    else:
+                        print(f"Agent response missing 'output' field: {agent_data}")
+                        response_text = await get_llm_fallback_response(original_query)
+                else:
+                    print(f"Agent URL returned {agent_result.status_code}")
+                    response_text = await get_llm_fallback_response(original_query)
+        except Exception as proxy_error:
+            print(f"Agent URL proxy error: {proxy_error}")
+            response_text = await get_llm_fallback_response(original_query)
+        
+        # Send response to Telegram
+        print(f"Sending response to Telegram chat {chat_id}...")
+        async with httpx.AsyncClient() as client:
+            telegram_response = await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": response_text
+                }
+            )
+            print(f"✓ Telegram API response: {telegram_response.status_code}")
+            
+    except Exception as e:
+        print(f"Error processing original query: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 async def setup_telegram_webhook(bot_token: str, webhook_url: str) -> dict:
     """Set up Telegram webhook for a bot"""
     async with httpx.AsyncClient() as client:
