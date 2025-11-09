@@ -583,7 +583,7 @@ def test_insufficient_balance_handling() -> Dict[str, Any]:
     
     # Use existing agent data but with a different user (simulating insufficient balance)
     bot_token = "7305057804:AAFe6qQVvVVPOCsD_rWn1wMOaQIenBpXSS0"
-    test_telegram_user_id = "insufficient_balance_user_999"
+    test_telegram_user_id = "999888777"  # Different user ID for testing
     
     # Test payload simulating a user with insufficient balance
     test_payload = {
