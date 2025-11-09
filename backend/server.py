@@ -603,7 +603,7 @@ async def telegram_webhook(bot_token: str, request: Request):
                         print(f"✓ Constructed link URL: {link_url}")
                         
                         response_text = (
-                            f"🤖 Welcome to this Laissez Agent!\n\n"
+                            f"🤖 Welcome to {agent_name}!\n\n"
                             f"{price_display}"
                             f"Start using it with your Laissez account:\n"
                             f"{link_url}\n\n"
