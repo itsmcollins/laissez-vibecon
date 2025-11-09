@@ -216,12 +216,15 @@ async def telegram_webhook(bot_token: str, request: Request):
                             response_text = "Unable to generate connection link. Please try again."
                             print("ERROR: Failed to create pending link record")
                     else:
+                        print(">>> LINKED ACCOUNT FOUND - Calling agent URL")
                         # Account is linked, proceed with agent proxy
                         # Query for agent by bot_token
                         agent_response = supabase.table("agents").select("*").eq("bot_token", bot_token).execute()
+                        print(f"Agent query result: {agent_response.data}")
                         
                         if agent_response.data and len(agent_response.data) > 0:
                             agent_url = agent_response.data[0]["url"]
+                            print(f"Calling agent URL: {agent_url}")
                             
                             # Try to proxy to agent URL
                             try:
@@ -230,24 +233,30 @@ async def telegram_webhook(bot_token: str, request: Request):
                                         agent_url,
                                         json={"input": user_message}
                                     )
+                                    print(f"Agent response status: {agent_result.status_code}")
                                     
                                     # Check if response is successful and has output field
                                     if agent_result.status_code == 200:
                                         agent_data = agent_result.json()
                                         if "output" in agent_data:
                                             response_text = agent_data["output"]
+                                            print(f"Using agent output (length: {len(response_text)})")
                                         else:
                                             # Malformed response, use LLM fallback
+                                            print("Agent response missing 'output' field - using LLM fallback")
                                             response_text = await get_llm_fallback_response(user_message)
                                     else:
                                         # Agent URL returned error
+                                        print(f"Agent returned error status {agent_result.status_code} - using LLM fallback")
                                         response_text = await get_llm_fallback_response(user_message)
                             except Exception as proxy_error:
                                 # Agent URL failed (timeout, connection error, etc.)
+                                print(f"Agent URL exception: {proxy_error} - using LLM fallback")
                                 response_text = await get_llm_fallback_response(user_message)
                         else:
                             # Bot token not found in database
                             response_text = "Configuration not found. Please set up your agent first."
+                            print("ERROR: Bot token not found in agents table")
                 except Exception as db_error:
                     response_text = await get_llm_fallback_response(user_message)
             
