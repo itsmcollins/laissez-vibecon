@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivy, useSessionSigners, useWallets } from '@privy-io/react-auth';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
 import { Toaster } from '../components/ui/sonner';
+
+const KEY_QUORUM_ID = import.meta.env.VITE_LAISSEZ_KEY_QUORUM_ID || 'wsu5txzij9hcntkyf9rfw5zh';
 
 const STORAGE_KEY = 'laissez_link_code';
 
