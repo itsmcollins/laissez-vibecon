@@ -12,7 +12,7 @@ from typing import Dict, Any
 
 # Get the backend URL from environment or use default
 # Use the preview URL format from frontend/.env
-BACKEND_URL = os.environ.get("BACKEND_URL", "https://payment-flow-check.preview.emergentagent.com")
+BACKEND_URL = os.environ.get("BACKEND_URL", "https://test-payments.preview.emergentagent.com")
 
 def test_health_check() -> Dict[str, Any]:
     """Test the health check endpoint"""

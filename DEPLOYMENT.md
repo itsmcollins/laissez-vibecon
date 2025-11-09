@@ -7,12 +7,12 @@ Your app is configured to work seamlessly in the Emergent platform's preview and
 ### How It Works
 
 **URL Structure:**
-- Preview: `https://payment-flow-check.preview.emergentagent.com` (or similar)
-- Your domain: `https://payment-flow-check.preview.emergentagent.com`
+- Preview: `https://test-payments.preview.emergentagent.com` (or similar)
+- Your domain: `https://test-payments.preview.emergentagent.com`
 
 **Architecture:**
 ```
-Browser Request → https://payment-flow-check.preview.emergentagent.com/api/agents
+Browser Request → https://test-payments.preview.emergentagent.com/api/agents
                                                             ↓
                                         Kubernetes Ingress (routes /api/*)
                                                             ↓
@@ -40,14 +40,14 @@ Browser Request → https://payment-flow-check.preview.emergentagent.com/api/age
 
 The app automatically adapts to:
 - Local development: `http://localhost:3000` → `http://localhost:8001`
-- Preview: `https://payment-flow-check.preview.emergentagent.com` → Same domain `/api/*`
+- Preview: `https://test-payments.preview.emergentagent.com` → Same domain `/api/*`
 - Production: Same domain routing via Kubernetes ingress
 
 ### Testing Your Deployment
 
 1. **Access your preview URL:**
    ```
-   https://payment-flow-check.preview.emergentagent.com
+   https://test-payments.preview.emergentagent.com
    ```
 
 2. **Fill in the form:**
@@ -143,6 +143,6 @@ CREATE TABLE agents (
 ## Success!
 
 Your app is production-ready and will work seamlessly at:
-`https://payment-flow-check.preview.emergentagent.com`
+`https://test-payments.preview.emergentagent.com`
 
 No additional configuration needed! 🎉
