@@ -12,6 +12,7 @@ import '../App.css';
 export default function AgentConfigPage() {
   const { getAccessToken, user, logout } = usePrivy();
   const [formData, setFormData] = useState({
+    name: '',
     url: '',
     botToken: '',
     price: 0.001,
