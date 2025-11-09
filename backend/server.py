@@ -160,17 +160,12 @@ async def telegram_webhook(bot_token: str, request: Request):
     try:
         # Parse the incoming update from Telegram
         update_data = await request.json()
-        print(f"\n========== WEBHOOK RECEIVED ==========")
-        print(f"Bot token: {bot_token}")
-        print(f"Update data: {update_data}")
         
         # Check if there's a message with text
         if "message" in update_data and "text" in update_data["message"]:
             chat_id = update_data["message"]["chat"]["id"]
             user_message = update_data["message"]["text"]
             telegram_user_id = str(update_data["message"]["from"]["id"])
-            
-            print(f"Extracted - Chat ID: {chat_id}, User ID: {telegram_user_id}, Message: {user_message}")
             
             # Get agent configuration from Supabase
             if not supabase:
