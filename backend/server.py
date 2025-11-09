@@ -1,6 +1,111 @@
-from fastapi import FastAPI, HTTPException, Request, Depends, Header, BackgroundTasks
+@app.post("/api/telegram-webhook/{bot_token}")
+async def telegram_webhook(bot_token: str, request: Request):
+    """
+    Handle Telegram webhook events: link users, collect payment, and proxy to the agent.
+    """
+    try:
+        update_data = await request.json()
+        message_data = update_data.get("message")
+
+        if not message_data or "text" not in message_data:
+            return {"ok": True}
+
+        chat_id = message_data["chat"]["id"]
+        user_message = message_data["text"]
+        telegram_user_id = str(message_data["from"]["id"])
+
+        async def reply(text: str) -> dict:
+            await send_telegram_message(bot_token, chat_id, text)
+            return {"ok": True}
+
+        print(f"\nTelegram message received | bot={bot_token[:8]} user={telegram_user_id} chat={chat_id}")
+
+        if not supabase:
+            return await reply("Service unavailable. Supabase is not configured.")
+
+        agent = await get_agent_by_bot_token(bot_token)
+        if not agent:
+            return await reply("Agent configuration not found. Please set up your agent first.")
+
+        agent_name = agent.get("name") or "this agent"
+        agent_price = float(agent.get("price") or 0)
+        agent_url = agent.get("url")
+        agent_creator_user_id = agent.get("user_id")
+
+        if not agent_url:
+            return await reply("Agent URL is missing. Please update your agent configuration.")
+
+        linked_account = supabase.table("linked_accounts").select("*").eq(
+            "platform", "telegram"
+        ).eq("platform_user_id", telegram_user_id).execute()
+
+        if not linked_account.data:
+            await initiate_account_link(
+                bot_token=bot_token,
+                chat_id=chat_id,
+                request=request,
+                telegram_user_id=telegram_user_id,
+                agent_name=agent_name,
+                agent_price=agent_price,
+            )
+            return {"ok": True}
+
+        laissez_user_id = linked_account.data[0]["laissez_user_id"]
+        tx_hash = None
+
+        if agent_price > 0:
+            if not agent_creator_user_id:
+                return await reply("Agent payment configuration is incomplete. Please contact the agent creator.")
+
+            buyer_wallet_info = await get_user_wallet_with_id(laissez_user_id)
+            if not buyer_wallet_info:
+                return await reply(
+                    "❌ Unable to access your wallet. Please re-link via the dashboard and enable session signers."
+                )
+
+            buyer_address, buyer_wallet_id = buyer_wallet_info
+            buyer_balance = await check_usdc_balance(buyer_address)
+
+            if buyer_balance is None:
+                return await reply("❌ Could not check your wallet balance. Please try again.")
+
+            if buyer_balance < agent_price:
+                return await reply(
+                    "💰 Insufficient balance!\n\n"
+                    f"Your balance: {buyer_balance:.6f} USDC\n"
+                    f"Required: {agent_price:.6f} USDC\n\n"
+                    "Add funds at https://faucet.circle.com (select Base Sepolia) and try again."
+                )
+
+            creator_wallet = await get_user_wallet_address(agent_creator_user_id)
+            if not creator_wallet:
+                return await reply("❌ We could not find the agent creator's wallet. Please contact support.")
+
+            tx_hash = await send_usdc_payment(
+                wallet_id=buyer_wallet_id,
+                wallet_address=buyer_address,
+                recipient_address=creator_wallet,
+                amount_usdc=agent_price,
+            )
+
+            if not tx_hash:
+                return await reply("❌ Payment failed. Please try again in a moment.")
+
+        agent_response = await invoke_agent(agent_url, user_message)
+        if not agent_response:
+            agent_response = "I couldn't reach the configured agent. Please try again later."
+
+        if tx_hash:
+            agent_response += f"\n\n💳 Transaction: https://sepolia.basescan.org/tx/{tx_hash}"
+
+        return await reply(agent_response)
+
+    except Exception as e:
+        print(f"Error processing webhook: {e}")
+        return {"ok": False, "error": str(e)}
+
+from fastapi import FastAPI, HTTPException, Request, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from supabase import create_client, Client
 import os
@@ -12,9 +117,6 @@ from typing import Optional, Dict, Any
 import jwt
 from privy import PrivyAPI
 from eth_abi import encode
-
-# Import x402 payment verification module
-from payment_verification import check_and_verify_payment
 
 load_dotenv()
 
@@ -37,9 +139,7 @@ LAISSEZ_AUTHORIZATION_KEY = os.environ.get("LAISSEZ_AUTHORIZATION_KEY")
 supabase_url = os.environ.get("SUPABASE_URL")
 supabase_key = os.environ.get("SUPABASE_KEY")
 
-# x402 Configuration
-X402_FACILITATOR_URL = "https://x402.org/facilitator"
-X402_NETWORK = "base-sepolia"
+# Payment configuration
 X402_USDC_ADDRESS = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"  # USDC on Base Sepolia
 USDC_DECIMALS = 6  # USDC has 6 decimals
 BASE_SEPOLIA_CHAIN_ID = 84532
@@ -350,10 +450,6 @@ async def send_usdc_payment(
     Send USDC payment from user's wallet to recipient using Privy SDK.
     Returns transaction hash or None on error.
     """
-    print(f"\n{'='*60}")
-    print(f"💸 PAYMENT FUNCTION START")
-    print(f"{'='*60}")
-
     if not _privy_client:
         print("❌ ERROR: Privy client not initialized")
         return None
@@ -363,40 +459,16 @@ async def send_usdc_payment(
         return None
 
     try:
-        print(f"📋 Payment Details:")
-        print(f"   From Wallet ID: {wallet_id[:30]}...")
-        print(f"   From Address: {wallet_address}")
-        print(f"   To Address: {recipient_address}")
-        print(f"   Amount: ${amount_usdc} USDC")
-
-        # Convert USDC amount to atomic units
         amount_atomic = int(amount_usdc * (10 ** USDC_DECIMALS))
-        print(f"   Amount (atomic): {amount_atomic} (with {USDC_DECIMALS} decimals)")
-
-        # Encode transfer(address,uint256) function call
-        # Function selector: keccak256("transfer(address,uint256)")[:4] = 0xa9059cbb
         function_selector = "0xa9059cbb"
-
-        # Encode parameters
         encoded_params = encode(
             ['address', 'uint256'],
             [recipient_address, amount_atomic]
         ).hex()
-
-        # Combine selector and params
         data = function_selector + encoded_params
-        print(f"📝 Transaction data encoded: {data[:50]}...")
 
-        print(f"📡 Using Privy SDK to send transaction...")
-        print(f"   Network: Base Sepolia (Chain ID: {BASE_SEPOLIA_CHAIN_ID})")
-        print(f"   USDC Contract: {X402_USDC_ADDRESS}")
-
-        # Set authorization key in client if not already set
         if hasattr(_privy_client, 'update_authorization_key'):
             _privy_client.update_authorization_key(LAISSEZ_AUTHORIZATION_KEY)
-            print(f"   ✓ Authorization key updated in SDK")
-
-        # Use Privy SDK's send_transaction method
         try:
             transaction_result = _privy_client.wallets.ethereum.send_transaction(
                 wallet_id=wallet_id,
@@ -405,87 +477,72 @@ async def send_usdc_payment(
                     "to": X402_USDC_ADDRESS,
                     "value": "0x0",
                     "data": data,
-                }
-            )
-
-            tx_hash = transaction_result.hash if hasattr(transaction_result, 'hash') else transaction_result.get('hash')
-
-            if tx_hash:
-                print(f"✅✅✅ TRANSACTION SENT SUCCESSFULLY!")
-                print(f"   Transaction Hash: {tx_hash}")
-                print(f"   View on BaseScan: https://sepolia.basescan.org/tx/{tx_hash}")
-                print(f"{'='*60}\n")
-                return tx_hash
-            else:
-                print(f"⚠️  SDK returned success but no hash found")
-                print(f"   Full result: {transaction_result}")
-
-        except Exception as sdk_error:
-            print(f"❌ SDK transaction failed: {sdk_error}")
-            print(f"   Falling back to direct API call...")
-
-            # Fallback to direct API call with correct format
-            payload = {
-                "method": "eth_sendTransaction",
-                "caip2": f"eip155:{BASE_SEPOLIA_CHAIN_ID}",
-                "params": {
-                    "transaction": {
-                        "to": X402_USDC_ADDRESS,
-                        "value": "0x0",
-                        "data": data,
-                        "chain_id": BASE_SEPOLIA_CHAIN_ID
-                    }
                 },
-                "sponsor": True  # Enable gas sponsorship
-            }
+            )
+        except Exception as sdk_error:
+            print(f"❌ Privy transaction failed: {sdk_error}")
+            return await _send_usdc_payment_via_rpc(data=data, wallet_id=wallet_id)
 
-            # Use direct HTTP call with correct authorization header format
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"https://api.privy.io/v1/wallets/{wallet_id}/rpc",
-                    headers={
-                        "Authorization": f"Bearer {PRIVY_APP_SECRET}",
-                        "privy-app-id": PRIVY_APP_ID,
-                        "privy-authorization-key": LAISSEZ_AUTHORIZATION_KEY,  # Correct auth key header
-                    },
-                    json=payload
-                )
+        tx_hash = getattr(transaction_result, "hash", None)
+        if tx_hash is None and isinstance(transaction_result, dict):
+            tx_hash = transaction_result.get("hash")
 
-                print(f"📬 Fallback Response Status: {response.status_code}")
+        if tx_hash:
+            print(f"✅ Payment sent | from={wallet_address} to={recipient_address} amount={amount_usdc}USDC hash={tx_hash}")
+            return tx_hash
 
-                if response.status_code == 200:
-                    result = response.json()
-                    print(f"✅ Response Body: {result}")
-                    tx_hash = result.get("hash")
-                    if tx_hash:
-                        print(f"✅✅✅ FALLBACK TRANSACTION SENT SUCCESSFULLY!")
-                        print(f"   Transaction Hash: {tx_hash}")
-                        print(f"   View on BaseScan: https://sepolia.basescan.org/tx/{tx_hash}")
-                        print(f"{'='*60}\n")
-                        return tx_hash
-                    else:
-                        print(f"⚠️  Response was 200 but no hash found in result")
-                        print(f"   Full result: {result}")
-                else:
-                    print(f"❌ FALLBACK TRANSACTION ALSO FAILED!")
-                    print(f"   Status Code: {response.status_code}")
-                    print(f"   Response Text: {response.text[:500]}")
-                    try:
-                        error_json = response.json()
-                        print(f"   Error JSON: {error_json}")
-                    except:
-                        pass
-
-        print(f"{'='*60}\n")
+        print("⚠️  Privy transaction succeeded but no hash returned")
         return None
 
     except Exception as e:
-        print(f"❌❌❌ EXCEPTION in send_usdc_payment: {e}")
-        print(f"   Exception Type: {type(e).__name__}")
-        import traceback
-        print(f"   Stack Trace:")
-        traceback.print_exc()
-        print(f"{'='*60}\n")
+        print(f"❌ Unexpected error in send_usdc_payment: {e}")
+        return None
+
+
+async def _send_usdc_payment_via_rpc(data: str, wallet_id: str) -> Optional[str]:
+    """Fallback to Privy RPC endpoint with gas sponsorship."""
+    if not PRIVY_APP_SECRET or not PRIVY_APP_ID or not LAISSEZ_AUTHORIZATION_KEY:
+        return None
+
+    payload = {
+        "method": "eth_sendTransaction",
+        "caip2": f"eip155:{BASE_SEPOLIA_CHAIN_ID}",
+        "params": {
+            "transaction": {
+                "to": X402_USDC_ADDRESS,
+                "value": "0x0",
+                "data": data,
+                "chain_id": BASE_SEPOLIA_CHAIN_ID,
+            }
+        },
+        "sponsor": True,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"https://api.privy.io/v1/wallets/{wallet_id}/rpc",
+                headers={
+                    "Authorization": f"Bearer {PRIVY_APP_SECRET}",
+                    "privy-app-id": PRIVY_APP_ID,
+                    "privy-authorization-key": LAISSEZ_AUTHORIZATION_KEY,
+                },
+                json=payload,
+            )
+
+        if response.status_code != 200:
+            print(f"❌ Privy RPC call failed: {response.status_code} {response.text[:200]}")
+            return None
+
+        result = response.json()
+        tx_hash = result.get("hash")
+        if tx_hash:
+            print(f"✅ Payment sent via RPC fallback | hash={tx_hash}")
+            return tx_hash
+        print("⚠️  RPC fallback succeeded without returning a transaction hash")
+        return None
+    except Exception as e:
+        print(f"❌ Privy RPC fallback error: {e}")
         return None
 
 
@@ -502,154 +559,100 @@ async def send_telegram_message(bot_token: str, chat_id: int, text: str):
         print(f"⚠️  Failed to send Telegram message: {e}")
 
 
-async def process_original_telegram_query(telegram_user_id: str, original_query: str, laissez_user_id: str, bot_token: str, chat_id: int):
-    """
-    Process the original query that triggered account linking.
-    Handles payment flow and sends the agent's response back to the user on Telegram.
-    """
+async def initiate_account_link(
+    bot_token: str,
+    chat_id: int,
+    request: Request,
+    telegram_user_id: str,
+    agent_name: str,
+    agent_price: float,
+) -> None:
+    """Create a pending link code and prompt the user to link their Telegram account."""
+    if not supabase:
+        await send_telegram_message(
+            bot_token,
+            chat_id,
+            "Service unavailable. Supabase is not configured.",
+        )
+        return
+
+    expires_at = (datetime.utcnow() + timedelta(hours=24)).isoformat()
+    pending_payload = {
+        "platform": "telegram",
+        "platform_user_id": telegram_user_id,
+        "bot_token": bot_token,
+        "chat_id": str(chat_id),
+        "expires_at": expires_at,
+    }
+
+    insert_result = supabase.table("pending_links").insert(pending_payload).execute()
+    if not insert_result.data:
+        await send_telegram_message(
+            bot_token,
+            chat_id,
+            "We couldn't start the account linking flow. Please try again later.",
+        )
+        return
+
+    code = insert_result.data[0]["code"]
+    link_url = f"{build_app_base_url(request)}/link?code={code}"
+    price_text = ""
+    if agent_price > 0:
+        price_text = f"💰 This agent costs {agent_price:.3f} USDC per message.\n\n"
+
+    response_text = (
+        f"🤖 Welcome to {agent_name}!\n\n"
+        f"{price_text}"
+        f"Link your Telegram account to continue:\n"
+        f"{link_url}\n\n"
+        f"(Link expires in 24 hours)"
+    )
+
+    await send_telegram_message(bot_token, chat_id, response_text)
+
+
+def build_app_base_url(request: Request) -> str:
+    """Derive the public app URL from request headers."""
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    forwarded_host = request.headers.get("x-forwarded-host")
+
+    host = forwarded_host or request.headers.get("host", "localhost:3000")
+    scheme = forwarded_proto or ("https" if "emergentagent.com" in host else "http")
+
+    if ":8001" in host:
+        host = host.replace(":8001", ":3000")
+
+    return f"{scheme}://{host}"
+
+
+async def get_agent_by_bot_token(bot_token: str) -> Optional[Dict[str, Any]]:
+    """Fetch a single agent configuration by bot token."""
+    if not supabase:
+        return None
+
+    response = supabase.table("agents").select("*").eq("bot_token", bot_token).execute()
+    if not response.data:
+        return None
+    return response.data[0]
+
+
+async def invoke_agent(agent_url: str, user_message: str) -> Optional[str]:
+    """Call the agent URL and return the response text if available."""
     try:
-        print(f"\n{'='*60}")
-        print(f"🔄 BACKGROUND: Processing original query for Telegram user {telegram_user_id}")
-        print(f"   Laissez User ID: {laissez_user_id[:20]}...")
-        print(f"   Original query: {original_query[:50]}...")
-        
-        # Get agent configuration
-        agent_response = supabase.table("agents").select("*").eq("bot_token", bot_token).execute()
-        
-        if not agent_response.data or len(agent_response.data) == 0:
-            print("❌ No agent found for bot_token")
-            await send_telegram_message(bot_token, chat_id, "Error: Agent configuration not found.")
-            return
-        
-        agent = agent_response.data[0]
-        agent_url = agent["url"]
-        agent_price = agent.get("price", 0)
-        agent_creator_user_id = agent.get("user_id")
-        
-        print(f"📋 Agent URL: {agent_url}")
-        print(f"💰 Agent price: ${agent_price}")
-        
-        # Handle payment if required
-        tx_hash = None
-        if agent_price and agent_price > 0 and agent_creator_user_id:
-            print(f"💳 Payment required: ${agent_price} USDC")
-            
-            # Get buyer's wallet
-            print(f"🔍 Getting buyer's wallet for user: {laissez_user_id[:20]}...")
-            buyer_wallet_info = await get_user_wallet_with_id(laissez_user_id)
-            
-            if not buyer_wallet_info:
-                error_msg = "❌ Error: Could not find your delegated wallet. Please re-link your account to enable payments."
-                print(f"❌ BACKGROUND: {error_msg}")
-                await send_telegram_message(bot_token, chat_id, error_msg)
-                return
-            
-            buyer_address, buyer_wallet_id = buyer_wallet_info
-            print(f"✅ Buyer wallet: {buyer_address} (ID: {buyer_wallet_id[:20]}...)")
-            
-            # Check buyer's balance
-            print(f"💵 Checking USDC balance for {buyer_address}...")
-            buyer_balance = await check_usdc_balance(buyer_address)
-            
-            if buyer_balance is None:
-                error_msg = "❌ Error: Could not check your wallet balance. Please try again."
-                print(f"❌ BACKGROUND: {error_msg}")
-                await send_telegram_message(bot_token, chat_id, error_msg)
-                return
-            
-            print(f"💰 Buyer balance: ${buyer_balance:.6f} USDC")
-            
-            # Check if sufficient balance
-            if buyer_balance < agent_price:
-                insufficient_msg = (
-                    f"💰 Insufficient balance!\n\n"
-                    f"Your balance: ${buyer_balance:.6f} USDC\n"
-                    f"Required: ${agent_price:.6f} USDC\n\n"
-                    f"Please add funds to your wallet:\n"
-                    f"🔗 https://faucet.circle.com\n\n"
-                    f"Your wallet address:\n"
-                    f"`{buyer_address}`\n\n"
-                    f"⚠️ Make sure to select Base Sepolia network!\n\n"
-                    f"Once funded, try sending your message again."
-                )
-                print(f"⚠️  BACKGROUND: Insufficient balance")
-                await send_telegram_message(bot_token, chat_id, insufficient_msg)
-                return
-            
-            # Get creator's wallet address
-            print(f"🔍 Getting creator's wallet for user: {agent_creator_user_id[:20]}...")
-            creator_wallet = await get_user_wallet_address(agent_creator_user_id)
-            
-            if not creator_wallet:
-                error_msg = "❌ Error: Could not find agent creator's wallet. Please contact support."
-                print(f"❌ BACKGROUND: {error_msg}")
-                await send_telegram_message(bot_token, chat_id, error_msg)
-                return
-            
-            print(f"✅ Creator wallet: {creator_wallet}")
-            print(f"💸 Sending payment: ${agent_price} from {buyer_address} to {creator_wallet}")
-            
-            # Send payment
-            tx_hash = await send_usdc_payment(
-                wallet_id=buyer_wallet_id,
-                wallet_address=buyer_address,
-                recipient_address=creator_wallet,
-                amount_usdc=agent_price
-            )
-            
-            if not tx_hash:
-                error_msg = "❌ Payment failed. Please try again or contact support."
-                print(f"❌ BACKGROUND: {error_msg}")
-                await send_telegram_message(bot_token, chat_id, error_msg)
-                return
-            
-            print(f"✅ Payment successful: {tx_hash}")
-        else:
-            print(f"ℹ️  No payment required (price: ${agent_price})")
-        
-        # Payment successful or not required - call agent
-        print(f"📡 Calling agent URL: {agent_url}")
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                agent_result = await client.post(
-                    agent_url,
-                    json={"input": original_query}
-                )
-                
-                if agent_result.status_code == 200:
-                    agent_data = agent_result.json()
-                    if "output" in agent_data:
-                        response_text = agent_data["output"]
-                        print(f"✅ Agent response received")
-                    else:
-                        print(f"⚠️  Agent response missing 'output' field: {agent_data}")
-                        response_text = await get_llm_fallback_response(original_query)
-                else:
-                    print(f"⚠️  Agent URL returned {agent_result.status_code}")
-                    response_text = await get_llm_fallback_response(original_query)
-        except Exception as proxy_error:
-            print(f"❌ Agent URL proxy error: {proxy_error}")
-            response_text = await get_llm_fallback_response(original_query)
-        
-        # Append transaction hash if payment was made
-        if tx_hash:
-            response_text += f"\n\n💳 [View transaction](https://sepolia.basescan.org/tx/{tx_hash})"
-            print(f"✅ Added transaction hash to response")
-        
-        # Send response to Telegram
-        print(f"📤 Sending response to Telegram chat {chat_id}...")
-        await send_telegram_message(bot_token, chat_id, response_text)
-        print(f"✅ BACKGROUND: Processing complete")
-        print(f"{'='*60}\n")
-            
-    except Exception as e:
-        print(f"❌ ERROR in background processing: {e}")
-        import traceback
-        traceback.print_exc()
-        try:
-            await send_telegram_message(bot_token, chat_id, "An error occurred processing your request. Please try again.")
-        except:
-            pass
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            agent_result = await client.post(agent_url, json={"input": user_message})
+
+        if agent_result.status_code != 200:
+            print(f"⚠️  Agent URL returned {agent_result.status_code}: {agent_result.text[:200]}")
+            return None
+
+        agent_data = agent_result.json()
+        return agent_data.get("output")
+    except Exception as proxy_error:
+        print(f"❌ Agent URL error: {proxy_error}")
+        return None
+
+
 
 
 async def setup_telegram_webhook(bot_token: str, webhook_url: str) -> dict:
@@ -665,110 +668,9 @@ async def setup_telegram_webhook(bot_token: str, webhook_url: str) -> dict:
         return result
 
 
-async def get_llm_fallback_response(user_message: str) -> str:
-    """Generate fallback response using LLM when agent URL fails"""
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
-    
-    api_key = os.environ.get("EMERGENT_LLM_KEY")
-    if not api_key:
-        return "I apologize, but I'm unable to connect to your configured agent at the moment. Please try again later."
-    
-    try:
-        # Initialize LLM chat
-        chat = LlmChat(
-            api_key=api_key,
-            session_id="telegram-fallback",
-            system_message=f"""You are a helpful assistant filling in for an unavailable agent. 
-The user asked: '{user_message}'
-
-Unfortunately, their configured agent is currently unavailable or experiencing issues. 
-Please provide the most helpful and accurate response you can to their query, while politely acknowledging that you're a backup assistant and their primary agent couldn't be reached.
-
-Be concise, helpful, and empathetic about the service disruption."""
-        ).with_model("openai", "gpt-5-mini")
-        
-        # Send message and get response
-        response = await chat.send_message(UserMessage(text=user_message))
-        return response
-    except Exception as e:
-        print(f"LLM fallback error: {e}")
-        return "I apologize, but I'm unable to process your request at the moment. Please try again later."
-
-
 def generate_link_code() -> str:
     """Generate a secure random code for account linking"""
     return secrets.token_urlsafe(32)
-
-
-async def check_x402_payment_with_verification(
-    request: Request, 
-    bot_token: str
-) -> Optional[Dict[str, Any]]:
-    """
-    Check if x402 payment is required and verify it with facilitator.
-    
-    This replaces the old insecure check_x402_payment() function.
-    Now uses proper x402 verification with facilitator instead of trusting headers.
-    
-    Returns None if payment is valid, or a dict with 402/400 response if payment required/invalid.
-    """
-    if not supabase:
-        return None
-    
-    try:
-        # Get agent configuration by bot_token
-        agent_response = supabase.table("agents").select("*").eq("bot_token", bot_token).execute()
-        
-        if not agent_response.data or len(agent_response.data) == 0:
-            # No agent found, don't require payment
-            return None
-        
-        agent = agent_response.data[0]
-        price = agent.get("price", 0)
-        creator_user_id = agent.get("user_id")
-        
-        # If no price or no user_id, don't require payment
-        if not price or price <= 0 or not creator_user_id:
-            return None
-        
-        # Fetch creator's wallet address from Privy dynamically
-        creator_wallet = await get_user_wallet_address(creator_user_id)
-        
-        if not creator_wallet:
-            print(f"WARNING: Could not fetch wallet for user {creator_user_id[:20]}, skipping payment")
-            return None
-        
-        # Use the new payment verification module with facilitator verification
-        print(f"🔒 Verifying payment with x402 facilitator...")
-        payment_check_result = await check_and_verify_payment(
-            request=request,
-            price_usd=price,
-            creator_wallet=creator_wallet,
-            bot_token=bot_token,
-        )
-        
-        if payment_check_result:
-            # Payment required or verification failed
-            status_code = payment_check_result.get("status_code", 402)
-            if status_code == 402:
-                print(f"💳 Payment required or verification failed")
-            elif status_code == 400:
-                print(f"❌ Invalid payment format")
-            return payment_check_result
-        
-        # Payment verified successfully
-        print(f"✅ Payment verified with facilitator for bot {bot_token[:20]}...")
-        return None
-        
-    except Exception as e:
-        print(f"❌ Error in payment verification: {e}")
-        import traceback
-        traceback.print_exc()
-        # On error, return 500 instead of allowing bypass
-        return {
-            "status_code": 500,
-            "body": {"error": "Payment verification service error"}
-        }
 
 
 # API Endpoints
@@ -926,7 +828,6 @@ async def delete_linked_account(account_id: int, user_id: str = Depends(verify_p
 @app.post("/api/link/complete")
 async def complete_account_link(
     link_request: LinkCompleteRequest,
-    background_tasks: BackgroundTasks,
     user_id: str = Depends(verify_privy_token)
 ):
     """Complete account linking by associating a code with a Privy user ID"""
@@ -971,55 +872,31 @@ async def complete_account_link(
             }
             supabase.table("linked_accounts").insert(link_data).execute()
         
-        # Note: Session signers are added from the frontend after successful linking
-        # The frontend uses addSessionSigners() hook to enable server-side wallet access
-        print(f"✓ Account linked for user {user_id[:20]}. Frontend will add session signers.")
-        
-        # Get original query if it exists
-        original_query = pending_link.get("original_query")
-        bot_token_from_link = pending_link.get("bot_token")
-        chat_id_from_link = pending_link.get("chat_id")
-        
         # Delete the pending link
         supabase.table("pending_links").delete().eq("code", link_request.code).execute()
-        
-        # If there was an original query, send confirmation and schedule processing in background
-        # This allows the frontend to complete the auth flow immediately
-        if original_query and pending_link["platform"] == "telegram" and bot_token_from_link and chat_id_from_link:
-            print(f"Sending confirmation message to Telegram...")
-            
-            # Send immediate confirmation to user in Telegram
+
+        # Optionally notify the Telegram user that linking is complete
+        bot_token_from_link = pending_link.get("bot_token")
+        chat_id_from_link = pending_link.get("chat_id")
+        if pending_link["platform"] == "telegram" and bot_token_from_link and chat_id_from_link:
+            message = (
+                "✅ Account linking successful!\n\n"
+                "You can now resend your message to continue."
+            )
             try:
-                async with httpx.AsyncClient() as client:
-                    await client.post(
-                        f"https://api.telegram.org/bot{bot_token_from_link}/sendMessage",
-                        json={
-                            "chat_id": int(chat_id_from_link),
-                            "text": "✅ Account linking successful! Now returning to your original message..."
-                        }
-                    )
-                    print(f"✓ Confirmation sent to Telegram")
+                await send_telegram_message(bot_token_from_link, int(chat_id_from_link), message)
             except Exception as confirm_error:
                 print(f"Failed to send confirmation: {confirm_error}")
-            
-            # Schedule the original query to be processed in background
-            print(f"Scheduling background processing of original query: {original_query[:50]}...")
-            background_tasks.add_task(
-                process_original_telegram_query,
-                telegram_user_id=pending_link["platform_user_id"],
-                original_query=original_query,
-                laissez_user_id=user_id,
-                bot_token=bot_token_from_link,
-                chat_id=int(chat_id_from_link)
-            )
-        
-        # Return success immediately - original query will be processed in background
+
+        # Note: Session signers are added from the frontend after successful linking
+        print(f"✓ Account linked for user {user_id[:20]}. Frontend will add session signers.")
+
         return {
             "success": True,
             "message": "Account linked successfully",
             "platform": pending_link["platform"],
             "platform_user_id": pending_link["platform_user_id"],
-            "will_process_original_query": bool(original_query and bot_token_from_link and chat_id_from_link)
+            "will_process_original_query": False
         }
     
     except HTTPException:
@@ -1027,320 +904,6 @@ async def complete_account_link(
     except Exception as e:
         print(f"Error completing link: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to complete link: {str(e)}")
-
-
-@app.post("/api/telegram-webhook/{bot_token}")
-async def telegram_webhook(bot_token: str, request: Request):
-    """
-    Receive updates from Telegram and handle account linking + payments.
-    
-    Flow:
-    1. Check if Telegram user is linked to Laissez account
-    2. If not linked: Send message with price and account creation link
-    3. If linked: Handle payment and proxy to agent (future: we pay on their behalf)
-    """
-    try:
-        # Parse the incoming update from Telegram - ALWAYS accept it
-        update_data = await request.json()
-        print(f"\n{'='*80}")
-        print(f"🔔 TELEGRAM WEBHOOK RECEIVED")
-        print(f"{'='*80}")
-        print(f"📋 Bot Token: {bot_token[:20]}...")
-        print(f"📋 Timestamp: {datetime.utcnow().isoformat()}")
-        
-        # Check if there's a message with text
-        if "message" in update_data and "text" in update_data["message"]:
-            chat_id = update_data["message"]["chat"]["id"]
-            user_message = update_data["message"]["text"]
-            telegram_user_id = str(update_data["message"]["from"]["id"])
-
-            print(f"📨 Message Details:")
-            print(f"   From Telegram User: {telegram_user_id}")
-            print(f"   Chat ID: {chat_id}")
-            print(f"   Message: {user_message[:100]}...")
-            print(f"{'='*80}")
-
-            # 🚨 x402 PAYMENT CHECK with FACILITATOR VERIFICATION
-            print(f"🔒 Checking x402 payment requirements with facilitator verification...")
-            payment_check_result = await check_x402_payment_with_verification(request, bot_token)
-
-            if payment_check_result:
-                # Payment required - return 402 response
-                print(f"💳 Payment required for bot {bot_token[:20]}")
-                print(f"📄 Returning 402 Payment Required with x402 details")
-                print(f"{'='*80}\n")
-
-                return JSONResponse(
-                    status_code=payment_check_result["status_code"],
-                    content=payment_check_result["body"]
-                )
-
-            print(f"✅ Payment check passed - proceeding with message processing")
-            print(f"{'='*80}")
-            
-            # Check if telegram account is linked
-            if supabase:
-                try:
-                    print(f"🔍 Checking if Telegram user {telegram_user_id} is linked...")
-                    linked_account = supabase.table("linked_accounts").select("*").eq(
-                        "platform", "telegram"
-                    ).eq("platform_user_id", telegram_user_id).execute()
-                    
-                    print(f"📊 Query result: Found {len(linked_account.data) if linked_account.data else 0} linked accounts")
-                    
-                    if not linked_account.data or len(linked_account.data) == 0:
-                        # Not linked - create pending link and show price
-                        print(f"❌ Telegram user {telegram_user_id} NOT linked, creating pending link...")
-                        
-                        # Get agent configuration to show name and price in message
-                        agent_response = supabase.table("agents").select("name, price").eq(
-                            "bot_token", bot_token
-                        ).execute()
-                        
-                        agent_name = "this Agent"
-                        price_display = ""
-                        if agent_response.data and len(agent_response.data) > 0:
-                            agent_data = agent_response.data[0]
-                            # Get agent name
-                            if agent_data.get("name"):
-                                agent_name = agent_data["name"]
-                            # Get price
-                            price = agent_data.get("price", 0)
-                            if price and price > 0:
-                                price_display = f"💰 This agent costs ${price:.3f} per message to use.\n\n"
-                        
-                        expires_at = (datetime.utcnow() + timedelta(hours=24)).isoformat()
-                        
-                        # Create pending link (code will be auto-generated as UUID by database)
-                        # Store the original query, bot_token, and chat_id so we can process it after linking
-                        pending_data = {
-                            "platform": "telegram",
-                            "platform_user_id": telegram_user_id,
-                            "original_query": user_message,  # Store the user's original message
-                            "bot_token": bot_token,  # Store which bot/agent they're messaging
-                            "chat_id": str(chat_id),  # Store where to send the response
-                            "expires_at": expires_at
-                        }
-                        
-                        insert_result = supabase.table("pending_links").insert(pending_data).execute()
-                        
-                        # Get the generated code from the inserted record
-                        if insert_result.data and len(insert_result.data) > 0:
-                            code = insert_result.data[0]["code"]
-                            print(f"✓ Pending link created with code: {code}")
-                        else:
-                            raise Exception("Failed to create pending link")
-                        
-                        # Construct the frontend URL using the same domain as the webhook request
-                        # The webhook is received at: {scheme}://{host}/api/telegram-webhook/{token}
-                        # We need to link to:        {scheme}://{host}/link?code={code}
-                        forwarded_proto = request.headers.get("x-forwarded-proto")
-                        forwarded_host = request.headers.get("x-forwarded-host")
-                        
-                        # Determine scheme
-                        if forwarded_proto:
-                            scheme = forwarded_proto
-                        else:
-                            # Check if running on emergentagent.com or similar production domain
-                            host = request.headers.get("host", "")
-                            scheme = "https" if ("emergentagent.com" in host or not host.startswith("localhost")) else "http"
-                        
-                        # Determine host
-                        if forwarded_host:
-                            host = forwarded_host
-                        else:
-                            host = request.headers.get("host", "localhost:3000")
-                            # Remove port if it's the backend port (8001), as frontend is on same domain
-                            if ":8001" in host:
-                                host = host.replace(":8001", ":3000")
-                        
-                        app_url = f"{scheme}://{host}"
-                        link_url = f"{app_url}/link?code={code}"
-                        print(f"✓ Constructed link URL: {link_url}")
-                        
-                        response_text = (
-                            f"🤖 Welcome to {agent_name}!\n\n"
-                            f"{price_display}"
-                            f"Start using it with your Laissez account:\n"
-                            f"{link_url}\n\n"
-                            f"(Link expires in 24 hours)"
-                        )
-                        
-                        # Send reply to Telegram
-                        print(f"Sending linking message to Telegram chat {chat_id}...")
-                        async with httpx.AsyncClient() as client:
-                            telegram_response = await client.post(
-                                f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                                json={
-                                    "chat_id": chat_id,
-                                    "text": response_text
-                                }
-                            )
-                            print(f"✓ Telegram API response: {telegram_response.status_code}")
-                        
-                        return {"ok": True}
-                    
-                    # Account is linked - get laissez_user_id (Privy user ID)
-                    laissez_user_id = linked_account.data[0]["laissez_user_id"]
-                    print(f"\n{'='*60}")
-                    print(f"✅ Telegram user {telegram_user_id} linked to Privy user {laissez_user_id[:20]}...")
-                    
-                    # Get agent configuration by bot_token (NOT filtered by user_id)
-                    # Any authenticated user can message any agent
-                    agent_response = supabase.table("agents").select("*").eq(
-                        "bot_token", bot_token
-                    ).execute()
-                    
-                    print(f"📋 Found {len(agent_response.data) if agent_response.data else 0} agents for bot token")
-                    
-                    if agent_response.data and len(agent_response.data) > 0:
-                        agent = agent_response.data[0]
-                        agent_url = agent["url"]
-                        agent_price = agent.get("price", 0)
-                        agent_creator_user_id = agent.get("user_id")
-                        
-                        print(f"📋 Agent details:")
-                        print(f"   URL: {agent_url}")
-                        print(f"   Price: ${agent_price}")
-                        print(f"   Creator: {agent_creator_user_id[:20] if agent_creator_user_id else 'N/A'}...")
-                        
-                        # Handle payment if required
-                        tx_hash = None
-                        if agent_price and agent_price > 0 and agent_creator_user_id:
-                            print(f"💳 Payment required: ${agent_price} USDC")
-                            
-                            # Get buyer's wallet
-                            print(f"🔍 Getting buyer's wallet for user: {laissez_user_id[:20]}...")
-                            buyer_wallet_info = await get_user_wallet_with_id(laissez_user_id)
-                            
-                            if not buyer_wallet_info:
-                                response_text = "❌ Error: Could not find your delegated wallet. Please re-link your account to enable payments."
-                                print(f"❌ {response_text}")
-                                await send_telegram_message(bot_token, chat_id, response_text)
-                                print(f"{'='*60}\n")
-                                return {"ok": True}
-                            
-                            buyer_address, buyer_wallet_id = buyer_wallet_info
-                            print(f"✅ Buyer wallet: {buyer_address} (ID: {buyer_wallet_id[:20]}...)")
-                            
-                            # Check buyer's balance
-                            print(f"💵 Checking USDC balance for {buyer_address}...")
-                            buyer_balance = await check_usdc_balance(buyer_address)
-                            if buyer_balance is None:
-                                response_text = "❌ Error: Could not check your wallet balance. Please try again."
-                                print(f"❌ Balance check failed")
-                                await send_telegram_message(bot_token, chat_id, response_text)
-                                print(f"{'='*60}\n")
-                                return {"ok": True}
-                            
-                            print(f"💰 Buyer balance: ${buyer_balance:.6f} USDC")
-                            
-                            # Check if sufficient balance
-                            if buyer_balance < agent_price:
-                                response_text = (
-                                    f"💰 Insufficient balance!\n\n"
-                                    f"Your balance: ${buyer_balance:.6f} USDC\n"
-                                    f"Required: ${agent_price:.6f} USDC\n\n"
-                                    f"Please add funds to your wallet:\n"
-                                    f"🔗 https://faucet.circle.com\n\n"
-                                    f"Your wallet address:\n"
-                                    f"`{buyer_address}`\n\n"
-                                    f"⚠️ Make sure to select Base Sepolia network!\n\n"
-                                    f"Once funded, try sending your message again."
-                                )
-                                print(f"⚠️  Insufficient balance: ${buyer_balance:.6f} < ${agent_price:.6f}")
-                                await send_telegram_message(bot_token, chat_id, response_text)
-                                print(f"{'='*60}\n")
-                                return {"ok": True}
-                            
-                            # Get creator's wallet address
-                            print(f"🔍 Getting creator's wallet for user: {agent_creator_user_id[:20]}...")
-                            creator_wallet = await get_user_wallet_address(agent_creator_user_id)
-                            if not creator_wallet:
-                                response_text = "❌ Error: Could not find agent creator's wallet. Please contact support."
-                                print(f"❌ Creator wallet not found")
-                                await send_telegram_message(bot_token, chat_id, response_text)
-                                print(f"{'='*60}\n")
-                                return {"ok": True}
-                            
-                            print(f"✅ Creator wallet: {creator_wallet}")
-                            print(f"💸 Sending payment: ${agent_price} from {buyer_address} to {creator_wallet}")
-                            
-                            # Send payment
-                            tx_hash = await send_usdc_payment(
-                                wallet_id=buyer_wallet_id,
-                                wallet_address=buyer_address,
-                                recipient_address=creator_wallet,
-                                amount_usdc=agent_price
-                            )
-                            
-                            if not tx_hash:
-                                response_text = "❌ Payment failed. Please try again or contact support."
-                                print(f"❌ Payment transaction failed")
-                                await send_telegram_message(bot_token, chat_id, response_text)
-                                print(f"{'='*60}\n")
-                                return {"ok": True}
-                            
-                            print(f"✅ Payment successful: {tx_hash}")
-                        else:
-                            print(f"ℹ️  No payment required (price: ${agent_price})")
-                        
-                        # Payment successful or not required - call agent
-                        print(f"📡 Calling agent URL: {agent_url}")
-                        try:
-                            async with httpx.AsyncClient(timeout=30.0) as client:
-                                agent_result = await client.post(
-                                    agent_url,
-                                    json={"input": user_message}
-                                )
-                                
-                                if agent_result.status_code == 200:
-                                    agent_data = agent_result.json()
-                                    if "output" in agent_data:
-                                        response_text = agent_data["output"]
-                                        print(f"✅ Agent response received")
-                                    else:
-                                        print(f"⚠️  Agent response missing 'output' field: {agent_data}")
-                                        response_text = await get_llm_fallback_response(user_message)
-                                else:
-                                    print(f"⚠️  Agent URL returned {agent_result.status_code}: {agent_result.text[:200]}")
-                                    response_text = await get_llm_fallback_response(user_message)
-                        except Exception as proxy_error:
-                            print(f"❌ Agent URL proxy error: {proxy_error}")
-                            response_text = await get_llm_fallback_response(user_message)
-                        
-                        # Append transaction hash if payment was made
-                        if tx_hash:
-                            response_text += f"\n\n💳 [View transaction](https://sepolia.basescan.org/tx/{tx_hash})"
-                            print(f"✅ Added transaction hash to response")
-                        
-                        print(f"{'='*60}\n")
-                    else:
-                        response_text = "Agent configuration not found. Please set up your agent first."
-                
-                except Exception as db_error:
-                    print(f"Database error: {db_error}")
-                    response_text = await get_llm_fallback_response(user_message)
-            else:
-                response_text = await get_llm_fallback_response(user_message)
-            
-            # Send reply to Telegram
-            async with httpx.AsyncClient() as client:
-                await client.post(
-                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                    json={
-                        "chat_id": chat_id,
-                        "text": response_text
-                    }
-                )
-        
-        # Always return 200 OK to Telegram
-        return {"ok": True}
-    
-    except Exception as e:
-        print(f"Error processing webhook: {e}")
-        # Return 200 anyway to avoid Telegram retrying
-        return {"ok": False, "error": str(e)}
 
 
 if __name__ == "__main__":
