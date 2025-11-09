@@ -8,7 +8,7 @@ import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
 import { Toaster } from '../components/ui/sonner';
 
-const KEY_QUORUM_ID = import.meta.env.VITE_LAISSEZ_KEY_QUORUM_ID || 'wsu5txzij9hcntkyf9rfw5zh';
+const KEY_QUORUM_ID = process.env.REACT_APP_LAISSEZ_KEY_QUORUM_ID || 'wsu5txzij9hcntkyf9rfw5zh';
 
 const STORAGE_KEY = 'laissez_link_code';
 
