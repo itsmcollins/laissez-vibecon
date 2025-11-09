@@ -1134,6 +1134,7 @@ async def telegram_webhook(bot_token: str, request: Request):
                             print(f"ℹ️  No payment required (price: ${agent_price})")
                         
                         # Payment successful or not required - call agent
+                        print(f"📡 Calling agent URL: {agent_url}")
                         try:
                             async with httpx.AsyncClient(timeout=30.0) as client:
                                 agent_result = await client.post(
@@ -1145,19 +1146,23 @@ async def telegram_webhook(bot_token: str, request: Request):
                                     agent_data = agent_result.json()
                                     if "output" in agent_data:
                                         response_text = agent_data["output"]
+                                        print(f"✅ Agent response received")
                                     else:
-                                        print(f"Agent response missing 'output' field: {agent_data}")
+                                        print(f"⚠️  Agent response missing 'output' field: {agent_data}")
                                         response_text = await get_llm_fallback_response(user_message)
                                 else:
-                                    print(f"Agent URL returned {agent_result.status_code}: {agent_result.text[:200]}")
+                                    print(f"⚠️  Agent URL returned {agent_result.status_code}: {agent_result.text[:200]}")
                                     response_text = await get_llm_fallback_response(user_message)
                         except Exception as proxy_error:
-                            print(f"Agent URL proxy error: {proxy_error}")
+                            print(f"❌ Agent URL proxy error: {proxy_error}")
                             response_text = await get_llm_fallback_response(user_message)
                         
                         # Append transaction hash if payment was made
                         if tx_hash:
                             response_text += f"\n\n💳 [View transaction](https://sepolia.basescan.org/tx/{tx_hash})"
+                            print(f"✅ Added transaction hash to response")
+                        
+                        print(f"{'='*60}\n")
                     else:
                         response_text = "Agent configuration not found. Please set up your agent first."
                 
