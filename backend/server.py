@@ -376,7 +376,7 @@ async def send_usdc_payment(
                 json={
                     "method": "eth_sendTransaction",
                     "params": {
-                        "origin": "https://agent-payment-api.preview.emergentagent.com",  # Required by Privy
+                        "origin": "https://telepriv.preview.emergentagent.com",  # Required by Privy
                         "caip2": f"eip155:{BASE_SEPOLIA_CHAIN_ID}",
                         "params": {
                             "transaction": {

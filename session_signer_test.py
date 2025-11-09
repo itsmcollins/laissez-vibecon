@@ -6,7 +6,7 @@ Specific test for Session Signer functionality
 import requests
 import os
 
-BACKEND_URL = os.environ.get("BACKEND_URL", "https://agent-payment-api.preview.emergentagent.com")
+BACKEND_URL = os.environ.get("BACKEND_URL", "https://telepriv.preview.emergentagent.com")
 
 def test_session_signer_issue():
     """Test to verify the session signer issue found in logs"""
