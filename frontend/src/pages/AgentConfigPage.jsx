@@ -92,6 +92,7 @@ export default function AgentConfigPage() {
             : 'Configuration saved to database.',
         });
         setFormData({
+          name: '',
           url: '',
           botToken: '',
           price: 0.001,
