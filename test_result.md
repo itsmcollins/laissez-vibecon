@@ -49,15 +49,18 @@ backend:
 
   - task: "Account Linking with Session Signers"
     implemented: true
-    working: "NA"
+    working: false
     file: "backend/server.py"
-    stuck_count: 0
+    stuck_count: 1
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Updated /api/link/complete endpoint to automatically add session signers (server-side wallet delegation) when user completes account linking. Uses LAISSEZ_KEY_QUORUM_ID and LAISSEZ_AUTHORIZATION_KEY for unrestricted server-side wallet access."
+      - working: false
+        agent: "testing"
+        comment: "❌ CRITICAL ISSUE - Session signers are NOT being added during account linking. Tested with existing linked user (Telegram ID: 8249022962, Privy ID: did:privy:cmhrbdcpy007jk00c2mci53fp) and wallet shows as 'not delegated'. The add_session_signers() function exists but is not being called successfully during /api/link/complete. Backend logs show no 'Setting up session signers' or '✓ Session signers added successfully' messages. This breaks the entire payment flow."
 
   - task: "Health Check Endpoint"
     implemented: true
