@@ -732,7 +732,7 @@ def run_all_tests() -> Dict[str, Any]:
     }
     
     print("\n" + "=" * 80)
-    print("📊 TEST SUMMARY - LLM FALLBACK FUNCTIONALITY")
+    print("📊 TEST SUMMARY - x402 PAYMENT FLOW IMPLEMENTATION")
     print("=" * 80)
     
     total_tests = len(results)
@@ -746,20 +746,56 @@ def run_all_tests() -> Dict[str, Any]:
     
     print(f"\nOverall: {passed_tests}/{total_tests} tests passed")
     
-    # Special summary for LLM fallback functionality
+    # Special summary for x402 payment flow
     print("\n" + "=" * 80)
-    print("🤖 LLM FALLBACK FUNCTIONALITY SUMMARY")
+    print("💰 x402 PAYMENT FLOW SUMMARY")
     print("=" * 80)
     
+    # Account Linking with Session Signers
+    if results["account_linking_session_signers"]["success"]:
+        print("✅ Account Linking: Endpoint accessible with proper authentication")
+        print("   - POST /api/link/complete requires valid authorization")
+        print("   - Session signers should be added automatically on linking")
+    else:
+        print("❌ Account Linking: Issues detected")
+        if results["account_linking_session_signers"]["error"]:
+            print(f"   Error: {results['account_linking_session_signers']['error']}")
+    
+    # Payment Flow
+    if results["payment_flow_telegram_message"]["success"]:
+        print("✅ Payment Flow: Telegram webhook processing working")
+        print("   - Webhook accepts messages from linked users")
+        print("   - Payment logic should be triggered for paid agents")
+        print("   - Check backend logs for payment processing details")
+    else:
+        print("❌ Payment Flow: Issues detected")
+        if results["payment_flow_telegram_message"]["error"]:
+            print(f"   Error: {results['payment_flow_telegram_message']['error']}")
+    
+    # Insufficient Balance Handling
+    if results["insufficient_balance_handling"]["success"]:
+        print("✅ Balance Handling: Webhook processes balance checks")
+        print("   - Should check USDC balance before processing")
+        print("   - Should provide faucet link for insufficient balance")
+        print("   - Should include wallet address and network instructions")
+    else:
+        print("❌ Balance Handling: Issues detected")
+        if results["insufficient_balance_handling"]["error"]:
+            print(f"   Error: {results['insufficient_balance_handling']['error']}")
+    
+    # Configuration
+    if results["configuration_verification"]["success"]:
+        print("✅ Configuration: Backend service running")
+        print("   - Verify LAISSEZ_KEY_QUORUM_ID and LAISSEZ_AUTHORIZATION_KEY in logs")
+        print("   - Verify Privy client initialization in logs")
+    else:
+        print("❌ Configuration: Backend service issues")
+    
+    # Legacy functionality
     if results["llm_fallback"]["success"]:
         print("✅ LLM Fallback: Working correctly")
-        print("   - Webhook endpoint accessible")
-        print("   - Agent URL lookup attempted")
-        print("   - LLM fallback triggered when agent URL fails")
     else:
         print("❌ LLM Fallback: Issues detected")
-        if results["llm_fallback"]["error"]:
-            print(f"   Error: {results['llm_fallback']['error']}")
     
     if results["agent_lookup"]["success"]:
         print("✅ Agent Lookup: Supabase integration working")
