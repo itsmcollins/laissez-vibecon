@@ -366,15 +366,14 @@ async def create_agent_config(
         if config.price < 0.001:
             raise HTTPException(status_code=400, detail="Price must be at least $0.001")
         
-        # Ensure user has a wallet (create if needed) - but don't store in DB
-        # We'll fetch it dynamically when needed for payments
-        print(f"Ensuring user has a wallet: {user_id[:20]}...")
+        # Check if user has a wallet - required for receiving payments
+        print(f"Checking if user has a wallet: {user_id[:20]}...")
         wallet_address = await get_user_wallet_address(user_id)
         
         if not wallet_address:
             raise HTTPException(
-                status_code=500, 
-                detail="Failed to create wallet. Please try again."
+                status_code=400, 
+                detail="No wallet found. Please create an embedded wallet in your Privy account first."
             )
         
         print(f"✓ User has wallet: {wallet_address}")
