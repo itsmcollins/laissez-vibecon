@@ -279,12 +279,14 @@ async def check_x402_payment(request: Request, bot_token: str) -> Optional[Dict[
     """
     Check if x402 payment is required and valid for a telegram webhook request.
     Returns None if payment is valid, or a dict with 402 response if payment is required.
+    
+    Fetches creator wallet address dynamically from Privy using agent's user_id.
     """
     if not supabase:
         return None
     
     try:
-        # Get agent configuration by bot_token to fetch price and creator wallet
+        # Get agent configuration by bot_token
         agent_response = supabase.table("agents").select("*").eq("bot_token", bot_token).execute()
         
         if not agent_response.data or len(agent_response.data) == 0:
@@ -293,10 +295,17 @@ async def check_x402_payment(request: Request, bot_token: str) -> Optional[Dict[
         
         agent = agent_response.data[0]
         price = agent.get("price", 0)
-        creator_wallet = agent.get("creator_wallet_address")
+        creator_user_id = agent.get("user_id")
         
-        # If no price or no wallet, don't require payment
-        if not price or price <= 0 or not creator_wallet:
+        # If no price or no user_id, don't require payment
+        if not price or price <= 0 or not creator_user_id:
+            return None
+        
+        # Fetch creator's wallet address from Privy dynamically
+        creator_wallet = await get_user_wallet_address(creator_user_id)
+        
+        if not creator_wallet:
+            print(f"WARNING: Could not fetch wallet for user {creator_user_id[:20]}, skipping payment")
             return None
         
         # Check for X-PAYMENT header
@@ -331,6 +340,8 @@ async def check_x402_payment(request: Request, bot_token: str) -> Optional[Dict[
         
     except Exception as e:
         print(f"Error checking x402 payment: {e}")
+        import traceback
+        traceback.print_exc()
         # On error, allow request to proceed without payment
         return None
 
