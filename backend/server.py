@@ -236,31 +236,22 @@ async def telegram_webhook(bot_token: str, request: Request):
                             # Bot token not found in database
                             response_text = "Configuration not found. Please set up your agent first."
                 except Exception as db_error:
-                    print(f"Database error: {db_error}")
                     response_text = await get_llm_fallback_response(user_message)
-            
-            print(f"Final response text: {response_text[:100]}")
             
             # Send reply to Telegram
             async with httpx.AsyncClient() as client:
-                telegram_response = await client.post(
+                await client.post(
                     f"https://api.telegram.org/bot{bot_token}/sendMessage",
                     json={
                         "chat_id": chat_id,
                         "text": response_text
                     }
                 )
-                print(f"Telegram sendMessage response: {telegram_response.status_code}")
-                print(f"Telegram response body: {telegram_response.text}")
         
-        print(f"========== WEBHOOK DEBUG END ==========\n")
         # Always return 200 OK to Telegram
         return {"ok": True}
     
     except Exception as e:
-        print(f"Error processing webhook: {e}")
-        import traceback
-        traceback.print_exc()
         # Return 200 anyway to avoid Telegram retrying
         return {"ok": False, "error": str(e)}
 
