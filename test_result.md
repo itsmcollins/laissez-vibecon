@@ -81,7 +81,9 @@ metadata:
   last_update: "x402 payment flow with Privy server-side signing implemented"
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "x402 Payment Flow with Privy Server-Side Signing"
+    - "Account Linking with Session Signers"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
