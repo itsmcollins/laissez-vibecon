@@ -1060,9 +1060,9 @@ async def telegram_webhook(bot_token: str, request: Request):
             print(f"   Message: {user_message[:100]}...")
             print(f"{'='*80}")
 
-            # 🚨 x402 PAYMENT CHECK - This is the proper x402 protocol implementation
-            print(f"🔒 Checking x402 payment requirements...")
-            payment_check_result = await check_x402_payment(request, bot_token)
+            # 🚨 x402 PAYMENT CHECK with FACILITATOR VERIFICATION
+            print(f"🔒 Checking x402 payment requirements with facilitator verification...")
+            payment_check_result = await check_x402_payment_with_verification(request, bot_token)
 
             if payment_check_result:
                 # Payment required - return 402 response
