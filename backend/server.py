@@ -406,12 +406,18 @@ async def send_usdc_payment(
         print(f"   USDC Contract: {X402_USDC_ADDRESS}")
         print(f"   Gas Sponsorship: Enabled")
         
+        auth_header_value = f"Bearer {PRIVY_APP_SECRET}" if PRIVY_APP_SECRET else ""
+        if PRIVY_APP_SECRET:
+            print(f"   Auth Header: Bearer {PRIVY_APP_SECRET[:6]}... (redacted)")
+        else:
+            print("   Auth Header: MISSING PRIVY_APP_SECRET!")
+        
         # Use Privy's server-side signing API
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"https://api.privy.io/v1/wallets/{wallet_id}/rpc",
                 headers={
-                    "Authorization": f"Bearer {PRIVY_APP_SECRET[:20]}...",
+                    "Authorization": auth_header_value,
                     "privy-app-id": PRIVY_APP_ID,
                     "privy-ca-id": PRIVY_APP_ID,  # Client app ID
                 },
