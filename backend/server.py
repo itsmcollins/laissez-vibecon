@@ -158,6 +158,13 @@ async def telegram_webhook(request: Request, bot_token: str = None):
     Falls back to LLM if agent URL fails.
     """
     try:
+        # Get bot_token from query parameter if not provided as function param
+        if not bot_token:
+            bot_token = request.query_params.get("bot_token")
+        
+        if not bot_token:
+            return {"ok": False, "error": "bot_token is required"}
+        
         # Parse the incoming update from Telegram
         update_data = await request.json()
         print(f"\n========== WEBHOOK DEBUG START ==========")
