@@ -548,38 +548,32 @@ async def complete_account_link(
         
         # Get original query if it exists
         original_query = pending_link.get("original_query")
+        bot_token_from_link = pending_link.get("bot_token")
+        chat_id_from_link = pending_link.get("chat_id")
         
         # Delete the pending link
         supabase.table("pending_links").delete().eq("code", link_request.code).execute()
         
-        # If there was an original query, process it and send response to user
-        if original_query and pending_link["platform"] == "telegram":
-            print(f"Processing original query: {original_query[:50]}...")
-            
-            bot_token_from_link = pending_link.get("bot_token")
-            chat_id_from_link = pending_link.get("chat_id")
-            
-            if bot_token_from_link and chat_id_from_link:
-                try:
-                    await process_original_telegram_query(
-                        telegram_user_id=pending_link["platform_user_id"],
-                        original_query=original_query,
-                        laissez_user_id=user_id,
-                        bot_token=bot_token_from_link,
-                        chat_id=int(chat_id_from_link)
-                    )
-                except Exception as query_error:
-                    print(f"Error processing original query: {query_error}")
-                    # Don't fail the linking if query processing fails
-            else:
-                print("Missing bot_token or chat_id in pending_link, skipping query processing")
+        # If there was an original query, schedule it to be processed in background
+        # This allows the frontend to complete the auth flow immediately
+        if original_query and pending_link["platform"] == "telegram" and bot_token_from_link and chat_id_from_link:
+            print(f"Scheduling background processing of original query: {original_query[:50]}...")
+            background_tasks.add_task(
+                process_original_telegram_query,
+                telegram_user_id=pending_link["platform_user_id"],
+                original_query=original_query,
+                laissez_user_id=user_id,
+                bot_token=bot_token_from_link,
+                chat_id=int(chat_id_from_link)
+            )
         
+        # Return success immediately - original query will be processed in background
         return {
             "success": True,
             "message": "Account linked successfully",
             "platform": pending_link["platform"],
             "platform_user_id": pending_link["platform_user_id"],
-            "processed_original_query": bool(original_query)
+            "will_process_original_query": bool(original_query and bot_token_from_link and chat_id_from_link)
         }
     
     except HTTPException:
