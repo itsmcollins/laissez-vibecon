@@ -180,10 +180,11 @@ async def verify_privy_token(authorization: Optional[str] = Header(None)) -> str
 
 async def get_user_wallet_address(user_id: str) -> Optional[str]:
     """
-    Get a user's Privy embedded wallet address, creating one if it doesn't exist.
-    Returns the wallet address or None if fetch/creation fails.
+    Get a user's Privy embedded wallet address.
+    Returns the wallet address or None if user has no wallet.
     
-    Note: One wallet per user, reused across all their agents.
+    Note: User must have created a wallet via Privy frontend.
+    One wallet per user, reused across all their agents.
     """
     if not _privy_client:
         print("ERROR: Privy client not initialized")
@@ -194,34 +195,19 @@ async def get_user_wallet_address(user_id: str) -> Optional[str]:
         print(f"Fetching user data for: {user_id[:20]}...")
         user_data = _privy_client.users.get(user_id)
         
-        # Check if user already has an embedded Ethereum wallet
+        # Check if user has an embedded Ethereum wallet
         for account in user_data.linked_accounts:
-            if account.type == "wallet" and account.chain_type == "ethereum" and hasattr(account, 'address'):
-                print(f"✓ Found existing wallet: {account.address}")
-                return account.address
+            if account.type == "wallet" and hasattr(account, 'chain_type'):
+                if account.chain_type == "ethereum" and hasattr(account, 'address'):
+                    print(f"✓ Found wallet: {account.address}")
+                    return account.address
         
-        # No wallet found, pregenerate one for this user
-        print(f"Creating new embedded wallet for user: {user_id[:20]}...")
-        
-        # Use pregenerateWallets to create wallet for existing user
-        updated_user = _privy_client.users.pregenerate_wallets(
-            user_id,
-            wallets=[{
-                "chain_type": "ethereum"
-            }]
-        )
-        
-        # Extract the newly created wallet address
-        for account in updated_user.linked_accounts:
-            if account.type == "wallet" and account.chain_type == "ethereum" and hasattr(account, 'address'):
-                print(f"✓ Wallet created successfully: {account.address}")
-                return account.address
-        
-        print("ERROR: Wallet creation succeeded but could not find wallet in response")
+        # No wallet found
+        print(f"⚠️  No wallet found for user {user_id[:20]}")
         return None
         
     except Exception as e:
-        print(f"ERROR: Failed to get/create wallet for user {user_id[:20]}: {e}")
+        print(f"ERROR: Failed to fetch wallet for user {user_id[:20]}: {e}")
         import traceback
         traceback.print_exc()
         return None
