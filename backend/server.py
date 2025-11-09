@@ -169,14 +169,11 @@ async def telegram_webhook(bot_token: str, request: Request):
             
             # Get agent configuration from Supabase
             if not supabase:
-                print("ERROR: Supabase not configured!")
                 response_text = await get_llm_fallback_response(user_message)
             else:
                 try:
                     # Check if this Telegram user is linked to a Laissez account
-                    print(f"Checking linked_accounts table for telegram user: {telegram_user_id}")
                     linked_account = supabase.table("linked_accounts").select("*").eq("platform", "telegram").eq("platform_user_id", telegram_user_id).execute()
-                    print(f"Linked account query result: {linked_account.data}")
                     
                     if not linked_account.data or len(linked_account.data) == 0:
                         print(">>> NO LINKED ACCOUNT - Generating pending link")
