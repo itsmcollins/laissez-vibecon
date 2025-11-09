@@ -40,6 +40,7 @@ export default function AgentConfigPage() {
       const token = await getAccessToken();
       if (!token) {
         console.error('No access token available');
+        setLinkedAccounts([]);
         return;
       }
 
@@ -51,12 +52,16 @@ export default function AgentConfigPage() {
 
       const data = await response.json();
       if (response.ok && data.success) {
-        setLinkedAccounts(data.data || []);
+        // Ensure data.data is an array before setting
+        const accounts = Array.isArray(data.data) ? data.data : [];
+        setLinkedAccounts(accounts);
       } else {
         console.error('Failed to fetch linked accounts:', data);
+        setLinkedAccounts([]);
       }
     } catch (error) {
       console.error('Error fetching linked accounts:', error);
+      setLinkedAccounts([]);
     } finally {
       setLoadingAccounts(false);
     }
