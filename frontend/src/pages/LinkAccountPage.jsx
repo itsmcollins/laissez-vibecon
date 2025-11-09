@@ -93,43 +93,40 @@ export default function LinkAccountPage() {
         // Add session signers to enable server-side wallet access for payments
         console.log('=== SESSION SIGNER SETUP START ===');
         console.log('KEY_QUORUM_ID:', KEY_QUORUM_ID);
-        console.log('Wallets available:', wallets?.length || 0);
-        console.log('Wallets:', wallets);
+        console.log('User object:', user);
+        console.log('User linked accounts:', user?.linkedAccounts);
         
-        if (wallets && wallets.length > 0) {
+        // Get wallet from user.linkedAccounts instead of wallets array (timing issue)
+        const walletAccount = user?.linkedAccounts?.find(
+          account => account.type === 'wallet' && account.chainType === 'ethereum'
+        );
+        
+        console.log('Found wallet account:', walletAccount);
+        
+        if (walletAccount && walletAccount.address) {
           try {
-            // Get the first embedded wallet
-            const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
-            console.log('Embedded wallet found:', embeddedWallet);
+            console.log(`⏳ Adding session signer to wallet: ${walletAccount.address}`);
+            console.log('Calling addSessionSigners with:', {
+              address: walletAccount.address,
+              signers: [{
+                signerId: KEY_QUORUM_ID,
+                policyIds: []
+              }]
+            });
             
-            if (embeddedWallet) {
-              console.log(`⏳ Adding session signer to wallet: ${embeddedWallet.address}`);
-              console.log('Calling addSessionSigners with:', {
-                address: embeddedWallet.address,
-                signers: [{
+            const result = await addSessionSigners({
+              address: walletAccount.address,
+              signers: [
+                {
                   signerId: KEY_QUORUM_ID,
-                  policyIds: []
-                }]
-              });
-              
-              const result = await addSessionSigners({
-                address: embeddedWallet.address,
-                signers: [
-                  {
-                    signerId: KEY_QUORUM_ID,
-                    policyIds: [] // No policies - unrestricted access for payments
-                  }
-                ]
-              });
-              
-              console.log('✅ Session signers added successfully!');
-              console.log('addSessionSigners result:', result);
-              toast.success('Wallet configured for payments');
-            } else {
-              console.warn('⚠️ No embedded wallet found in wallets array');
-              console.warn('Available wallet types:', wallets.map(w => w.walletClientType));
-              toast.warning('No embedded wallet found. Payments may not work.');
-            }
+                  policyIds: [] // No policies - unrestricted access for payments
+                }
+              ]
+            });
+            
+            console.log('✅ Session signers added successfully!');
+            console.log('addSessionSigners result:', result);
+            toast.success('Wallet configured for payments');
           } catch (signerError) {
             console.error('❌ Failed to add session signers:', signerError);
             console.error('Error details:', {
@@ -141,9 +138,9 @@ export default function LinkAccountPage() {
             toast.error('Wallet delegation failed: ' + signerError.message);
           }
         } else {
-          console.warn('⚠️ No wallets found for session signer setup');
-          console.warn('User object:', user);
-          toast.warning('No wallets found. Please create a wallet first.');
+          console.warn('⚠️ No wallet found in user.linkedAccounts');
+          console.warn('User has', user?.linkedAccounts?.length || 0, 'linked accounts');
+          toast.warning('No wallet found. Please create a wallet first.');
         }
         
         console.log('=== SESSION SIGNER SETUP END ===');
