@@ -373,7 +373,7 @@ async def create_agent_config(
         if not wallet_address:
             raise HTTPException(
                 status_code=400, 
-                detail="No wallet found. Please create an embedded wallet in your Privy account first."
+                detail="No wallet found. Please log out and log back in to create a wallet automatically."
             )
         
         print(f"✓ User has wallet: {wallet_address}")
