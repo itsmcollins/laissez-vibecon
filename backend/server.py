@@ -318,50 +318,6 @@ async def check_usdc_balance(wallet_address: str) -> Optional[float]:
         return None
 
 
-async def add_session_signers(wallet_address: str, wallet_id: str) -> bool:
-    """
-    Add session signers (server-side delegation) to a user's wallet using Privy API.
-    Returns True if successful, False otherwise.
-    """
-    if not LAISSEZ_KEY_QUORUM_ID or not LAISSEZ_AUTHORIZATION_KEY:
-        print("ERROR: Session signer credentials not configured")
-        return False
-    
-    try:
-        print(f"Adding session signers to wallet {wallet_address}...")
-        
-        # Use Privy API to add session signers
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"https://api.privy.io/v1/wallets/{wallet_id}/session_signers",
-                headers={
-                    "Authorization": f"Bearer {PRIVY_APP_SECRET}",
-                    "privy-app-id": PRIVY_APP_ID,
-                },
-                json={
-                    "signers": [
-                        {
-                            "signer_id": LAISSEZ_KEY_QUORUM_ID,
-                            "policy_ids": []  # No policies - unrestricted access
-                        }
-                    ]
-                }
-            )
-            
-            if response.status_code in [200, 201]:
-                print(f"✓ Session signers added successfully to {wallet_address}")
-                return True
-            else:
-                print(f"⚠️  Failed to add session signers: {response.status_code} - {response.text[:200]}")
-                return False
-                
-    except Exception as e:
-        print(f"ERROR: Failed to add session signers: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
 async def send_usdc_payment(
     wallet_id: str,
     wallet_address: str,
