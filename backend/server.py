@@ -1124,10 +1124,14 @@ async def telegram_webhook(bot_token: str, request: Request):
                             
                             if not tx_hash:
                                 response_text = "❌ Payment failed. Please try again or contact support."
+                                print(f"❌ Payment transaction failed")
                                 await send_telegram_message(bot_token, chat_id, response_text)
+                                print(f"{'='*60}\n")
                                 return {"ok": True}
                             
-                            print(f"✓ Payment successful: {tx_hash}")
+                            print(f"✅ Payment successful: {tx_hash}")
+                        else:
+                            print(f"ℹ️  No payment required (price: ${agent_price})")
                         
                         # Payment successful or not required - call agent
                         try:
