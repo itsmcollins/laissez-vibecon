@@ -344,114 +344,138 @@ async def send_usdc_payment(
     amount_usdc: float
 ) -> Optional[str]:
     """
-    Send USDC payment from user's wallet to recipient using Privy server-side signing.
+    Send USDC payment from user's wallet to recipient using Privy SDK.
     Returns transaction hash or None on error.
     """
     print(f"\n{'='*60}")
     print(f"💸 PAYMENT FUNCTION START")
     print(f"{'='*60}")
-    
+
+    if not _privy_client:
+        print("❌ ERROR: Privy client not initialized")
+        return None
+
     if not LAISSEZ_AUTHORIZATION_KEY:
         print("❌ ERROR: Authorization key not configured")
         return None
-    
+
     try:
         print(f"📋 Payment Details:")
         print(f"   From Wallet ID: {wallet_id[:30]}...")
         print(f"   From Address: {wallet_address}")
         print(f"   To Address: {recipient_address}")
         print(f"   Amount: ${amount_usdc} USDC")
-        
+
         # Convert USDC amount to atomic units
         amount_atomic = int(amount_usdc * (10 ** USDC_DECIMALS))
         print(f"   Amount (atomic): {amount_atomic} (with {USDC_DECIMALS} decimals)")
-        
+
         # Encode transfer(address,uint256) function call
         # Function selector: keccak256("transfer(address,uint256)")[:4] = 0xa9059cbb
         function_selector = "0xa9059cbb"
-        
+
         # Encode parameters
         encoded_params = encode(
             ['address', 'uint256'],
             [recipient_address, amount_atomic]
         ).hex()
-        
+
         # Combine selector and params
         data = function_selector + encoded_params
         print(f"📝 Transaction data encoded: {data[:50]}...")
-        
-        # Prepare request payload
-        payload = {
-            "method": "eth_sendTransaction",
-            "caip2": f"eip155:{BASE_SEPOLIA_CHAIN_ID}",
-            "params": {
-                "transaction": {
+
+        print(f"📡 Using Privy SDK to send transaction...")
+        print(f"   Network: Base Sepolia (Chain ID: {BASE_SEPOLIA_CHAIN_ID})")
+        print(f"   USDC Contract: {X402_USDC_ADDRESS}")
+
+        # Set authorization key in client if not already set
+        if hasattr(_privy_client, 'update_authorization_key'):
+            _privy_client.update_authorization_key(LAISSEZ_AUTHORIZATION_KEY)
+            print(f"   ✓ Authorization key updated in SDK")
+
+        # Use Privy SDK's send_transaction method
+        try:
+            transaction_result = _privy_client.wallets.ethereum.send_transaction(
+                wallet_id=wallet_id,
+                caip2=f"eip155:{BASE_SEPOLIA_CHAIN_ID}",
+                transaction={
                     "to": X402_USDC_ADDRESS,
                     "value": "0x0",
                     "data": data,
-                    "chain_id": BASE_SEPOLIA_CHAIN_ID
                 }
-            },
-            "sponsor": True,  # Enable gas sponsorship
-            "authorization_context": {
-                "authorization_private_keys": [LAISSEZ_AUTHORIZATION_KEY]
-            },
-            "origin": "https://link-guard-fix.preview.emergentagent.com"  # Required by Privy
-        }
-        
-        print(f"📡 Calling Privy RPC API...")
-        print(f"   URL: https://api.privy.io/v1/wallets/{wallet_id[:20]}.../rpc")
-        print(f"   Method: eth_sendTransaction")
-        print(f"   Network: Base Sepolia (Chain ID: {BASE_SEPOLIA_CHAIN_ID})")
-        print(f"   USDC Contract: {X402_USDC_ADDRESS}")
-        print(f"   Gas Sponsorship: Enabled")
-        
-        auth_header_value = f"Bearer {PRIVY_APP_SECRET}" if PRIVY_APP_SECRET else ""
-        if PRIVY_APP_SECRET:
-            print(f"   Auth Header: Bearer {PRIVY_APP_SECRET[:6]}... (redacted)")
-        else:
-            print("   Auth Header: MISSING PRIVY_APP_SECRET!")
-        
-        # Use Privy's server-side signing API
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                f"https://api.privy.io/v1/wallets/{wallet_id}/rpc",
-                headers={
-                    "Authorization": auth_header_value,
-                    "privy-app-id": PRIVY_APP_ID,
-                    "privy-ca-id": PRIVY_APP_ID,  # Client app ID
-                },
-                json=payload
             )
-            
-            print(f"📬 Response Status: {response.status_code}")
-            
-            if response.status_code == 200:
-                result = response.json()
-                print(f"✅ Response Body: {result}")
-                tx_hash = result.get("hash")
-                if tx_hash:
-                    print(f"✅✅✅ TRANSACTION SENT SUCCESSFULLY!")
-                    print(f"   Transaction Hash: {tx_hash}")
-                    print(f"   View on BaseScan: https://sepolia.basescan.org/tx/{tx_hash}")
-                    print(f"{'='*60}\n")
-                    return tx_hash
-                else:
-                    print(f"⚠️  Response was 200 but no hash found in result")
-                    print(f"   Full result: {result}")
+
+            tx_hash = transaction_result.hash if hasattr(transaction_result, 'hash') else transaction_result.get('hash')
+
+            if tx_hash:
+                print(f"✅✅✅ TRANSACTION SENT SUCCESSFULLY!")
+                print(f"   Transaction Hash: {tx_hash}")
+                print(f"   View on BaseScan: https://sepolia.basescan.org/tx/{tx_hash}")
+                print(f"{'='*60}\n")
+                return tx_hash
             else:
-                print(f"❌ TRANSACTION FAILED!")
-                print(f"   Status Code: {response.status_code}")
-                print(f"   Response Text: {response.text[:500]}")
-                try:
-                    error_json = response.json()
-                    print(f"   Error JSON: {error_json}")
-                except:
-                    pass
-            
-            print(f"{'='*60}\n")
-            return None
-            
+                print(f"⚠️  SDK returned success but no hash found")
+                print(f"   Full result: {transaction_result}")
+
+        except Exception as sdk_error:
+            print(f"❌ SDK transaction failed: {sdk_error}")
+            print(f"   Falling back to direct API call...")
+
+            # Fallback to direct API call with correct format
+            payload = {
+                "method": "eth_sendTransaction",
+                "caip2": f"eip155:{BASE_SEPOLIA_CHAIN_ID}",
+                "params": {
+                    "transaction": {
+                        "to": X402_USDC_ADDRESS,
+                        "value": "0x0",
+                        "data": data,
+                        "chain_id": BASE_SEPOLIA_CHAIN_ID
+                    }
+                },
+                "sponsor": True  # Enable gas sponsorship
+            }
+
+            # Use direct HTTP call with correct authorization header format
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"https://api.privy.io/v1/wallets/{wallet_id}/rpc",
+                    headers={
+                        "Authorization": f"Bearer {PRIVY_APP_SECRET}",
+                        "privy-app-id": PRIVY_APP_ID,
+                        "privy-authorization-key": LAISSEZ_AUTHORIZATION_KEY,  # Correct auth key header
+                    },
+                    json=payload
+                )
+
+                print(f"📬 Fallback Response Status: {response.status_code}")
+
+                if response.status_code == 200:
+                    result = response.json()
+                    print(f"✅ Response Body: {result}")
+                    tx_hash = result.get("hash")
+                    if tx_hash:
+                        print(f"✅✅✅ FALLBACK TRANSACTION SENT SUCCESSFULLY!")
+                        print(f"   Transaction Hash: {tx_hash}")
+                        print(f"   View on BaseScan: https://sepolia.basescan.org/tx/{tx_hash}")
+                        print(f"{'='*60}\n")
+                        return tx_hash
+                    else:
+                        print(f"⚠️  Response was 200 but no hash found in result")
+                        print(f"   Full result: {result}")
+                else:
+                    print(f"❌ FALLBACK TRANSACTION ALSO FAILED!")
+                    print(f"   Status Code: {response.status_code}")
+                    print(f"   Response Text: {response.text[:500]}")
+                    try:
+                        error_json = response.json()
+                        print(f"   Error JSON: {error_json}")
+                    except:
+                        pass
+
+        print(f"{'='*60}\n")
+        return None
+
     except Exception as e:
         print(f"❌❌❌ EXCEPTION in send_usdc_payment: {e}")
         print(f"   Exception Type: {type(e).__name__}")
@@ -1026,11 +1050,29 @@ async def telegram_webhook(bot_token: str, request: Request):
             chat_id = update_data["message"]["chat"]["id"]
             user_message = update_data["message"]["text"]
             telegram_user_id = str(update_data["message"]["from"]["id"])
-            
+
             print(f"📨 Message Details:")
             print(f"   From Telegram User: {telegram_user_id}")
             print(f"   Chat ID: {chat_id}")
             print(f"   Message: {user_message[:100]}...")
+            print(f"{'='*80}")
+
+            # 🚨 x402 PAYMENT CHECK - This is the proper x402 protocol implementation
+            print(f"🔒 Checking x402 payment requirements...")
+            payment_check_result = await check_x402_payment(request, bot_token)
+
+            if payment_check_result:
+                # Payment required - return 402 response
+                print(f"💳 Payment required for bot {bot_token[:20]}")
+                print(f"📄 Returning 402 Payment Required with x402 details")
+                print(f"{'='*80}\n")
+
+                return JSONResponse(
+                    status_code=payment_check_result["status_code"],
+                    content=payment_check_result["body"]
+                )
+
+            print(f"✅ Payment check passed - proceeding with message processing")
             print(f"{'='*80}")
             
             # Check if telegram account is linked
