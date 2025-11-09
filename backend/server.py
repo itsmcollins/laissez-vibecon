@@ -225,16 +225,20 @@ async def get_user_wallet_with_id(user_id: str) -> Optional[tuple[str, str]]:
     Returns (wallet_address, wallet_id) tuple or None if user has no wallet.
     """
     if not _privy_client:
-        print("ERROR: Privy client not initialized")
+        print("❌ ERROR: Privy client not initialized")
         return None
     
     try:
         # Get user's data from Privy
-        print(f"Fetching user data with wallet ID for: {user_id[:20]}...")
+        print(f"🔍 Fetching user data with wallet ID for: {user_id[:20]}...")
         user_data = _privy_client.users.get(user_id)
         
+        print(f"📋 User has {len(user_data.linked_accounts)} linked accounts")
+        
         # Check if user has an embedded Ethereum wallet with delegated access
-        for account in user_data.linked_accounts:
+        for idx, account in enumerate(user_data.linked_accounts):
+            print(f"  Account {idx}: type={account.type}, chain_type={getattr(account, 'chain_type', 'N/A')}")
+            
             if account.type == "wallet" and hasattr(account, 'chain_type'):
                 if account.chain_type == "ethereum" and hasattr(account, 'address'):
                     wallet_address = account.address
@@ -242,19 +246,28 @@ async def get_user_wallet_with_id(user_id: str) -> Optional[tuple[str, str]]:
                     # Check if wallet has delegated access (session signers)
                     delegated = getattr(account, 'delegated', False)
                     
+                    print(f"  📍 Found Ethereum wallet:")
+                    print(f"     Address: {wallet_address}")
+                    print(f"     ID: {wallet_id}")
+                    print(f"     Delegated: {delegated}")
+                    
                     if wallet_id and delegated:
-                        print(f"✓ Found delegated wallet: {wallet_address} (ID: {wallet_id[:20]}...)")
+                        print(f"✅ Found delegated wallet: {wallet_address} (ID: {wallet_id[:20]}...)")
                         return (wallet_address, wallet_id)
                     elif wallet_id and not delegated:
-                        print(f"⚠️  Wallet {wallet_address} found but not delegated")
+                        print(f"⚠️  Wallet {wallet_address} found but NOT delegated (session signers not added)")
+                        print(f"     User needs to re-link account to add session signers")
                         return None
+                    else:
+                        print(f"⚠️  Wallet found but missing ID: {wallet_address}")
         
         # No wallet found
-        print(f"⚠️  No delegated wallet found for user {user_id[:20]}")
+        print(f"❌ No delegated wallet found for user {user_id[:20]}")
+        print(f"   Total accounts checked: {len(user_data.linked_accounts)}")
         return None
         
     except Exception as e:
-        print(f"ERROR: Failed to fetch wallet with ID for user {user_id[:20]}: {e}")
+        print(f"❌ ERROR: Failed to fetch wallet with ID for user {user_id[:20]}: {e}")
         import traceback
         traceback.print_exc()
         return None
