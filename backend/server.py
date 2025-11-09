@@ -178,6 +178,49 @@ async def verify_privy_token(authorization: Optional[str] = Header(None)) -> str
         raise HTTPException(status_code=500, detail=f"Failed to verify token: {str(e)}")
 
 
+async def get_or_create_user_wallet(user_id: str) -> Optional[str]:
+    """
+    Get or create a Privy embedded wallet for a user on Base Sepolia.
+    Returns the wallet address or None if creation fails.
+    """
+    if not _privy_client:
+        print("ERROR: Privy client not initialized")
+        return None
+    
+    try:
+        # Get user's wallets from Privy
+        print(f"Fetching wallets for user: {user_id[:20]}...")
+        user_data = _privy_client.users.get(user_id)
+        
+        # Check if user already has an embedded wallet
+        existing_wallets = user_data.linked_accounts
+        
+        for account in existing_wallets:
+            if account.type == "wallet" and hasattr(account, 'address'):
+                print(f"✓ Found existing wallet: {account.address}")
+                return account.address
+        
+        # No wallet found, create one
+        print(f"Creating new embedded wallet for user: {user_id[:20]}...")
+        
+        # Create wallet using Privy API
+        wallet_response = _privy_client.wallets.create(
+            user_id=user_id,
+            chain_type="ethereum"
+        )
+        
+        wallet_address = wallet_response.address
+        print(f"✓ Wallet created successfully: {wallet_address}")
+        
+        return wallet_address
+        
+    except Exception as e:
+        print(f"ERROR: Failed to create wallet for user {user_id[:20]}: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
 async def setup_telegram_webhook(bot_token: str, webhook_url: str) -> dict:
     """Set up Telegram webhook for a bot"""
     async with httpx.AsyncClient() as client:
