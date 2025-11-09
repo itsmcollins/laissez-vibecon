@@ -254,15 +254,18 @@ async def get_user_wallet_with_id(user_id: str) -> Optional[tuple[str, str]]:
                     print(f"     Delegated: {delegated}")
                     print(f"     All account attributes: {dir(account)}")
                     
-                    if wallet_id and delegated:
-                        print(f"✅ Found delegated wallet: {wallet_address} (ID: {wallet_id[:20]}...)")
-                        return (wallet_address, wallet_id)
-                    elif wallet_id and not delegated:
+                    # Use wallet_uuid if available, otherwise fall back to id
+                    effective_wallet_id = wallet_uuid or wallet_id
+                    
+                    if effective_wallet_id and delegated:
+                        print(f"✅ Found delegated wallet: {wallet_address} (Using ID: {effective_wallet_id[:20] if len(effective_wallet_id) > 20 else effective_wallet_id}...)")
+                        return (wallet_address, effective_wallet_id)
+                    elif effective_wallet_id and not delegated:
                         print(f"⚠️  Wallet {wallet_address} found but NOT delegated (session signers not added)")
                         print(f"     User needs to re-link account to add session signers")
                         return None
                     else:
-                        print(f"⚠️  Wallet found but missing ID: {wallet_address}")
+                        print(f"⚠️  Wallet found but missing UUID/ID: {wallet_address}")
         
         # No wallet found
         print(f"❌ No delegated wallet found for user {user_id[:20]}")
