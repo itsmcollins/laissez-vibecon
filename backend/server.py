@@ -341,15 +341,24 @@ async def send_usdc_payment(
     Send USDC payment from user's wallet to recipient using Privy server-side signing.
     Returns transaction hash or None on error.
     """
+    print(f"\n{'='*60}")
+    print(f"💸 PAYMENT FUNCTION START")
+    print(f"{'='*60}")
+    
     if not LAISSEZ_AUTHORIZATION_KEY:
-        print("ERROR: Authorization key not configured")
+        print("❌ ERROR: Authorization key not configured")
         return None
     
     try:
-        print(f"Sending {amount_usdc} USDC from {wallet_address} to {recipient_address}...")
+        print(f"📋 Payment Details:")
+        print(f"   From Wallet ID: {wallet_id[:30]}...")
+        print(f"   From Address: {wallet_address}")
+        print(f"   To Address: {recipient_address}")
+        print(f"   Amount: ${amount_usdc} USDC")
         
         # Convert USDC amount to atomic units
         amount_atomic = int(amount_usdc * (10 ** USDC_DECIMALS))
+        print(f"   Amount (atomic): {amount_atomic} (with {USDC_DECIMALS} decimals)")
         
         # Encode transfer(address,uint256) function call
         # Function selector: keccak256("transfer(address,uint256)")[:4] = 0xa9059cbb
@@ -363,49 +372,81 @@ async def send_usdc_payment(
         
         # Combine selector and params
         data = function_selector + encoded_params
+        print(f"📝 Transaction data encoded: {data[:50]}...")
+        
+        # Prepare request payload
+        payload = {
+            "method": "eth_sendTransaction",
+            "caip2": f"eip155:{BASE_SEPOLIA_CHAIN_ID}",
+            "params": {
+                "transaction": {
+                    "to": X402_USDC_ADDRESS,
+                    "value": "0x0",
+                    "data": data,
+                    "chain_id": BASE_SEPOLIA_CHAIN_ID
+                }
+            },
+            "sponsor": True,  # Enable gas sponsorship
+            "authorization_context": {
+                "authorization_private_keys": [LAISSEZ_AUTHORIZATION_KEY]
+            },
+            "origin": "https://link-guard-fix.preview.emergentagent.com"  # Required by Privy
+        }
+        
+        print(f"📡 Calling Privy RPC API...")
+        print(f"   URL: https://api.privy.io/v1/wallets/{wallet_id[:20]}.../rpc")
+        print(f"   Method: eth_sendTransaction")
+        print(f"   Network: Base Sepolia (Chain ID: {BASE_SEPOLIA_CHAIN_ID})")
+        print(f"   USDC Contract: {X402_USDC_ADDRESS}")
+        print(f"   Gas Sponsorship: Enabled")
         
         # Use Privy's server-side signing API
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"https://api.privy.io/v1/wallets/{wallet_id}/rpc",
                 headers={
-                    "Authorization": f"Bearer {PRIVY_APP_SECRET}",
+                    "Authorization": f"Bearer {PRIVY_APP_SECRET[:20]}...",
                     "privy-app-id": PRIVY_APP_ID,
                     "privy-ca-id": PRIVY_APP_ID,  # Client app ID
                 },
-                json={
-                    "method": "eth_sendTransaction",
-                    "caip2": f"eip155:{BASE_SEPOLIA_CHAIN_ID}",
-                    "params": {
-                        "transaction": {
-                            "to": X402_USDC_ADDRESS,
-                            "value": "0x0",
-                            "data": data,
-                            "chain_id": BASE_SEPOLIA_CHAIN_ID
-                        }
-                    },
-                    "sponsor": True,  # Enable gas sponsorship
-                    "authorization_context": {
-                        "authorization_private_keys": [LAISSEZ_AUTHORIZATION_KEY]
-                    },
-                    "origin": "https://link-guard-fix.preview.emergentagent.com"  # Required by Privy
-                }
+                json=payload
             )
+            
+            print(f"📬 Response Status: {response.status_code}")
             
             if response.status_code == 200:
                 result = response.json()
+                print(f"✅ Response Body: {result}")
                 tx_hash = result.get("hash")
                 if tx_hash:
-                    print(f"✓ Transaction sent: {tx_hash}")
+                    print(f"✅✅✅ TRANSACTION SENT SUCCESSFULLY!")
+                    print(f"   Transaction Hash: {tx_hash}")
+                    print(f"   View on BaseScan: https://sepolia.basescan.org/tx/{tx_hash}")
+                    print(f"{'='*60}\n")
                     return tx_hash
+                else:
+                    print(f"⚠️  Response was 200 but no hash found in result")
+                    print(f"   Full result: {result}")
+            else:
+                print(f"❌ TRANSACTION FAILED!")
+                print(f"   Status Code: {response.status_code}")
+                print(f"   Response Text: {response.text[:500]}")
+                try:
+                    error_json = response.json()
+                    print(f"   Error JSON: {error_json}")
+                except:
+                    pass
             
-            print(f"⚠️  Transaction failed: {response.status_code} - {response.text[:300]}")
+            print(f"{'='*60}\n")
             return None
             
     except Exception as e:
-        print(f"ERROR: Failed to send USDC payment: {e}")
+        print(f"❌❌❌ EXCEPTION in send_usdc_payment: {e}")
+        print(f"   Exception Type: {type(e).__name__}")
         import traceback
+        print(f"   Stack Trace:")
         traceback.print_exc()
+        print(f"{'='*60}\n")
         return None
 
 
