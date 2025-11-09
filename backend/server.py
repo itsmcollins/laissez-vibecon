@@ -96,7 +96,7 @@ async def get_privy_verification_key():
                 app_data = response.json()
                 _privy_verification_key = app_data.get("verification_key")
                 if _privy_verification_key:
-                    print(f"✓ Privy verification key fetched successfully")
+                    print("✓ Privy verification key fetched successfully")
                     return _privy_verification_key
             
             print(f"Warning: Could not fetch verification key, status: {response.status_code}")
@@ -116,7 +116,7 @@ async def verify_privy_token(authorization: Optional[str] = Header(None)) -> str
         raise HTTPException(status_code=401, detail="Missing authorization header")
     
     if not authorization.startswith("Bearer "):
-        print(f"ERROR: Invalid authorization header format")
+        print("ERROR: Invalid authorization header format")
         raise HTTPException(status_code=401, detail="Invalid authorization header format")
     
     token = authorization.replace("Bearer ", "")
