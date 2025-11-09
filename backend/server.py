@@ -1106,9 +1106,12 @@ async def telegram_webhook(bot_token: str, request: Request):
                             creator_wallet = await get_user_wallet_address(agent_creator_user_id)
                             if not creator_wallet:
                                 response_text = "❌ Error: Could not find agent creator's wallet. Please contact support."
+                                print(f"❌ Creator wallet not found")
                                 await send_telegram_message(bot_token, chat_id, response_text)
+                                print(f"{'='*60}\n")
                                 return {"ok": True}
                             
+                            print(f"✅ Creator wallet: {creator_wallet}")
                             print(f"💸 Sending payment: ${agent_price} from {buyer_address} to {creator_wallet}")
                             
                             # Send payment
