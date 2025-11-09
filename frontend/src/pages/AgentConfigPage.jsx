@@ -76,6 +76,7 @@ export default function AgentConfigPage() {
           Authorization: `Bearer ${authorizationToken}`,
         },
         body: JSON.stringify({
+          name: formData.name,
           url: formData.url,
           bot_token: formData.botToken,
           price: formData.price,
