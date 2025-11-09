@@ -554,9 +554,26 @@ async def complete_account_link(
         # Delete the pending link
         supabase.table("pending_links").delete().eq("code", link_request.code).execute()
         
-        # If there was an original query, schedule it to be processed in background
+        # If there was an original query, send confirmation and schedule processing in background
         # This allows the frontend to complete the auth flow immediately
         if original_query and pending_link["platform"] == "telegram" and bot_token_from_link and chat_id_from_link:
+            print(f"Sending confirmation message to Telegram...")
+            
+            # Send immediate confirmation to user in Telegram
+            try:
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        f"https://api.telegram.org/bot{bot_token_from_link}/sendMessage",
+                        json={
+                            "chat_id": int(chat_id_from_link),
+                            "text": "✅ Account linking successful! Now returning to your original message..."
+                        }
+                    )
+                    print(f"✓ Confirmation sent to Telegram")
+            except Exception as confirm_error:
+                print(f"Failed to send confirmation: {confirm_error}")
+            
+            # Schedule the original query to be processed in background
             print(f"Scheduling background processing of original query: {original_query[:50]}...")
             background_tasks.add_task(
                 process_original_telegram_query,
