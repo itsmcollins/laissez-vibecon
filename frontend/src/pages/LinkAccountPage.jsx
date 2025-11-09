@@ -26,6 +26,8 @@ export default function LinkAccountPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { login, ready, authenticated, getAccessToken, user } = usePrivy();
+  const { addSessionSigners } = useSessionSigners();
+  const { wallets } = useWallets();
   const [status, setStatus] = useState('idle');
   const [loading, setLoading] = useState(false);
   const [manualCode, setManualCode] = useState('');
