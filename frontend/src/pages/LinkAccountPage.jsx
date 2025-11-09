@@ -7,6 +7,10 @@ import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
 import { Toaster } from '../components/ui/sonner';
+import { Buffer } from 'buffer';
+
+// Polyfill Buffer for browser environment
+window.Buffer = Buffer;
 
 const KEY_QUORUM_ID = process.env.REACT_APP_LAISSEZ_KEY_QUORUM_ID || 'wsu5txzij9hcntkyf9rfw5zh';
 
