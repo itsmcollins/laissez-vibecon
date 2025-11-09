@@ -133,6 +133,20 @@ export default function AgentConfigPage() {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
+                <Label htmlFor="name">Agent Name</Label>
+                <Input
+                  type="text"
+                  id="name"
+                  name="name"
+                  data-testid="agent-name-input"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  required
+                  placeholder="My Amazing Agent"
+                />
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="url">Agent URL</Label>
                 <Input
                   type="url"
