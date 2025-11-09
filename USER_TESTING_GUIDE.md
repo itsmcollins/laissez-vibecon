@@ -63,7 +63,7 @@ View transaction: https://sepolia.basescan.org/tx/0x...
 **Steps**:
 1. Using the **same account from Scenario 1**, visit the link page again:
    - Option A: Click the link in Telegram again
-   - Option B: Navigate to: `https://telepriv.preview.emergentagent.com/link?code=YOUR_CODE`
+   - Option B: Navigate to: `https://link-guard-fix.preview.emergentagent.com/link?code=YOUR_CODE`
 2. **Open browser DevTools** (F12) and check the **Console** tab
 
 **Expected Console Output**:

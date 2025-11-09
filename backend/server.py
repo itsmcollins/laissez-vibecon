@@ -388,7 +388,7 @@ async def send_usdc_payment(
                     "authorization_context": {
                         "authorization_private_keys": [LAISSEZ_AUTHORIZATION_KEY]
                     },
-                    "origin": "https://telepriv.preview.emergentagent.com"  # Required by Privy
+                    "origin": "https://link-guard-fix.preview.emergentagent.com"  # Required by Privy
                 }
             )
             
