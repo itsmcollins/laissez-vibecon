@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import jwt
 from privy import PrivyAPI
+from viem import encodeFunctionData, erc20Abi
 
 load_dotenv()
 
