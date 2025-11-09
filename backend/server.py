@@ -700,12 +700,17 @@ def generate_link_code() -> str:
     return secrets.token_urlsafe(32)
 
 
-async def check_x402_payment(request: Request, bot_token: str) -> Optional[Dict[str, Any]]:
+async def check_x402_payment_with_verification(
+    request: Request, 
+    bot_token: str
+) -> Optional[Dict[str, Any]]:
     """
-    Check if x402 payment is required and valid for a telegram webhook request.
-    Returns None if payment is valid, or a dict with 402 response if payment is required.
+    Check if x402 payment is required and verify it with facilitator.
     
-    Fetches creator wallet address dynamically from Privy using agent's user_id.
+    This replaces the old insecure check_x402_payment() function.
+    Now uses proper x402 verification with facilitator instead of trusting headers.
+    
+    Returns None if payment is valid, or a dict with 402/400 response if payment required/invalid.
     """
     if not supabase:
         return None
@@ -733,42 +738,37 @@ async def check_x402_payment(request: Request, bot_token: str) -> Optional[Dict[
             print(f"WARNING: Could not fetch wallet for user {creator_user_id[:20]}, skipping payment")
             return None
         
-        # Check for X-PAYMENT header
-        x_payment_header = request.headers.get("X-PAYMENT") or request.headers.get("x-payment")
+        # Use the new payment verification module with facilitator verification
+        print(f"🔒 Verifying payment with x402 facilitator...")
+        payment_check_result = await check_and_verify_payment(
+            request=request,
+            price_usd=price,
+            creator_wallet=creator_wallet,
+            bot_token=bot_token,
+        )
         
-        if not x_payment_header:
-            # No payment provided, return 402 with payment requirements
-            price_atomic = int(price * 1_000_000)  # Convert to USDC atomic units (6 decimals)
-            
-            return {
-                "status_code": 402,
-                "body": {
-                    "x402Version": 1,
-                    "accepts": [{
-                        "scheme": "exact",
-                        "network": X402_NETWORK,
-                        "maxAmountRequired": str(price_atomic),
-                        "resource": str(request.url.path),
-                        "description": f"Payment required to message this agent (${price})",
-                        "payTo": creator_wallet,
-                        "asset": X402_USDC_ADDRESS,
-                        "maxTimeoutSeconds": 60
-                    }],
-                    "error": "Payment required"
-                }
-            }
+        if payment_check_result:
+            # Payment required or verification failed
+            status_code = payment_check_result.get("status_code", 402)
+            if status_code == 402:
+                print(f"💳 Payment required or verification failed")
+            elif status_code == 400:
+                print(f"❌ Invalid payment format")
+            return payment_check_result
         
-        # Payment header exists - in a full implementation, we would verify it with the facilitator
-        # For now, we'll trust the payment header (in production, verify with facilitator)
-        print(f"✓ X-PAYMENT header present for bot {bot_token[:20]}")
+        # Payment verified successfully
+        print(f"✅ Payment verified with facilitator for bot {bot_token[:20]}...")
         return None
         
     except Exception as e:
-        print(f"Error checking x402 payment: {e}")
+        print(f"❌ Error in payment verification: {e}")
         import traceback
         traceback.print_exc()
-        # On error, allow request to proceed without payment
-        return None
+        # On error, return 500 instead of allowing bypass
+        return {
+            "status_code": 500,
+            "body": {"error": "Payment verification service error"}
+        }
 
 
 # API Endpoints
