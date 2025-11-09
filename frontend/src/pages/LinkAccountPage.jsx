@@ -124,8 +124,15 @@ export default function LinkAccountPage() {
               message: signerError?.message,
               stack: signerError?.stack
             });
-            // Don't fail the entire link, just log the error
-            toast.error('Wallet delegation failed: ' + signerError.message);
+            
+            // Check if it's a duplicate signer error (which is fine - signers already added)
+            if (signerError.message && signerError.message.includes('Duplicate signer')) {
+              console.log('ℹ️  Session signers already added (duplicate error ignored)');
+              toast.success('Wallet already configured for payments');
+            } else {
+              // Real error - show to user
+              toast.error('Wallet delegation failed: ' + signerError.message);
+            }
           }
         } else {
           console.warn('⚠️ No wallet found in user.linkedAccounts');
