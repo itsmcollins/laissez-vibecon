@@ -846,10 +846,16 @@ async def get_linked_accounts(user_id: str = Depends(verify_privy_token)):
         raise HTTPException(status_code=500, detail="Supabase not configured")
     
     try:
+        print(f"📋 Fetching linked accounts for user: {user_id[:20]}...")
         response = supabase.table("linked_accounts").select("*").eq("laissez_user_id", user_id).execute()
+        print(f"📊 Found {len(response.data) if response.data else 0} linked accounts")
+        if response.data:
+            print(f"📋 Sample account data: {response.data[0] if len(response.data) > 0 else 'N/A'}")
         return {"success": True, "data": response.data}
     except Exception as e:
-        print(f"Error fetching linked accounts: {e}")
+        print(f"❌ Error fetching linked accounts: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to fetch linked accounts: {str(e)}")
 
 
