@@ -90,6 +90,37 @@ export default function LinkAccountPage() {
           throw new Error(payload.detail || 'Failed to complete account link');
         }
 
+        // Add session signers to enable server-side wallet access for payments
+        console.log('Adding session signers for server-side wallet access...');
+        if (wallets && wallets.length > 0) {
+          try {
+            // Get the first embedded wallet
+            const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
+            if (embeddedWallet) {
+              console.log(`Adding session signer to wallet: ${embeddedWallet.address}`);
+              await addSessionSigners({
+                address: embeddedWallet.address,
+                signers: [
+                  {
+                    signerId: KEY_QUORUM_ID,
+                    policyIds: [] // No policies - unrestricted access for payments
+                  }
+                ]
+              });
+              console.log('✓ Session signers added successfully');
+              toast.success('Wallet configured for payments');
+            } else {
+              console.warn('No embedded wallet found');
+            }
+          } catch (signerError) {
+            console.error('Failed to add session signers:', signerError);
+            // Don't fail the entire link, just log the error
+            toast.warning('Account linked but wallet delegation failed. Payments may not work.');
+          }
+        } else {
+          console.warn('No wallets found for session signer setup');
+        }
+
         sessionStorage.removeItem(STORAGE_KEY);
         hasLinkedRef.current = true;
         setStatus('success');
