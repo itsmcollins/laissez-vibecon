@@ -51,10 +51,10 @@ frontend: []
 
 metadata:
   created_by: "main_agent"
-  version: "1.1"
-  test_sequence: 2
+  version: "1.2"
+  test_sequence: 3
   run_ui: false
-  last_update: "x402 and Privy wallet integration implemented"
+  last_update: "x402 payment flow with Privy server-side signing implemented"
 
 test_plan:
   current_focus: []
