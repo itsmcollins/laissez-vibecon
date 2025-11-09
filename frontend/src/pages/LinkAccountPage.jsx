@@ -79,28 +79,14 @@ export default function LinkAccountPage() {
           throw new Error('Missing Privy access token');
         }
 
-        const response = await fetch('/api/link/complete', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ code }),
-        });
-
-        const payload = await response.json();
-
-        if (!response.ok) {
-          throw new Error(payload.detail || 'Failed to complete account link');
-        }
-
-        // Add session signers to enable server-side wallet access for payments
+        // Add session signers FIRST, before calling backend
+        // This prevents race condition where background task runs before signers are added
         console.log('=== SESSION SIGNER SETUP START ===');
         console.log('KEY_QUORUM_ID:', KEY_QUORUM_ID);
         console.log('User object:', user);
         console.log('User linked accounts:', user?.linkedAccounts);
         
-        // Get wallet from user.linkedAccounts instead of wallets array (timing issue)
+        // Get wallet from user.linkedAccounts
         const walletAccount = user?.linkedAccounts?.find(
           account => account.type === 'wallet' && account.chainType === 'ethereum'
         );
@@ -148,6 +134,25 @@ export default function LinkAccountPage() {
         }
         
         console.log('=== SESSION SIGNER SETUP END ===');
+
+        // NOW call the backend after session signers are added
+        console.log('📡 Calling backend to complete account link...');
+        const response = await fetch('/api/link/complete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ code }),
+        });
+
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.detail || 'Failed to complete account link');
+        }
+
+        console.log('✅ Backend link complete successful');
 
         sessionStorage.removeItem(STORAGE_KEY);
         hasLinkedRef.current = true;
