@@ -425,22 +425,110 @@ async def send_telegram_message(bot_token: str, chat_id: int, text: str):
 async def process_original_telegram_query(telegram_user_id: str, original_query: str, laissez_user_id: str, bot_token: str, chat_id: int):
     """
     Process the original query that triggered account linking.
-    Sends the agent's response back to the user on Telegram.
+    Handles payment flow and sends the agent's response back to the user on Telegram.
     """
     try:
-        print(f"Processing original query for Telegram user {telegram_user_id}...")
+        print(f"\n{'='*60}")
+        print(f"🔄 BACKGROUND: Processing original query for Telegram user {telegram_user_id}")
+        print(f"   Laissez User ID: {laissez_user_id[:20]}...")
+        print(f"   Original query: {original_query[:50]}...")
         
         # Get agent configuration
         agent_response = supabase.table("agents").select("*").eq("bot_token", bot_token).execute()
         
         if not agent_response.data or len(agent_response.data) == 0:
-            print("No agent found for bot_token")
+            print("❌ No agent found for bot_token")
+            await send_telegram_message(bot_token, chat_id, "Error: Agent configuration not found.")
             return
         
-        agent_url = agent_response.data[0]["url"]
-        print(f"Proxying to agent URL: {agent_url}")
+        agent = agent_response.data[0]
+        agent_url = agent["url"]
+        agent_price = agent.get("price", 0)
+        agent_creator_user_id = agent.get("user_id")
         
-        # Try to proxy to agent URL
+        print(f"📋 Agent URL: {agent_url}")
+        print(f"💰 Agent price: ${agent_price}")
+        
+        # Handle payment if required
+        tx_hash = None
+        if agent_price and agent_price > 0 and agent_creator_user_id:
+            print(f"💳 Payment required: ${agent_price} USDC")
+            
+            # Get buyer's wallet
+            print(f"🔍 Getting buyer's wallet for user: {laissez_user_id[:20]}...")
+            buyer_wallet_info = await get_user_wallet_with_id(laissez_user_id)
+            
+            if not buyer_wallet_info:
+                error_msg = "❌ Error: Could not find your delegated wallet. Please re-link your account to enable payments."
+                print(f"❌ BACKGROUND: {error_msg}")
+                await send_telegram_message(bot_token, chat_id, error_msg)
+                return
+            
+            buyer_address, buyer_wallet_id = buyer_wallet_info
+            print(f"✅ Buyer wallet: {buyer_address} (ID: {buyer_wallet_id[:20]}...)")
+            
+            # Check buyer's balance
+            print(f"💵 Checking USDC balance for {buyer_address}...")
+            buyer_balance = await check_usdc_balance(buyer_address)
+            
+            if buyer_balance is None:
+                error_msg = "❌ Error: Could not check your wallet balance. Please try again."
+                print(f"❌ BACKGROUND: {error_msg}")
+                await send_telegram_message(bot_token, chat_id, error_msg)
+                return
+            
+            print(f"💰 Buyer balance: ${buyer_balance:.6f} USDC")
+            
+            # Check if sufficient balance
+            if buyer_balance < agent_price:
+                insufficient_msg = (
+                    f"💰 Insufficient balance!\n\n"
+                    f"Your balance: ${buyer_balance:.6f} USDC\n"
+                    f"Required: ${agent_price:.6f} USDC\n\n"
+                    f"Please add funds to your wallet:\n"
+                    f"🔗 https://faucet.circle.com\n\n"
+                    f"Your wallet address:\n"
+                    f"`{buyer_address}`\n\n"
+                    f"⚠️ Make sure to select Base Sepolia network!\n\n"
+                    f"Once funded, try sending your message again."
+                )
+                print(f"⚠️  BACKGROUND: Insufficient balance")
+                await send_telegram_message(bot_token, chat_id, insufficient_msg)
+                return
+            
+            # Get creator's wallet address
+            print(f"🔍 Getting creator's wallet for user: {agent_creator_user_id[:20]}...")
+            creator_wallet = await get_user_wallet_address(agent_creator_user_id)
+            
+            if not creator_wallet:
+                error_msg = "❌ Error: Could not find agent creator's wallet. Please contact support."
+                print(f"❌ BACKGROUND: {error_msg}")
+                await send_telegram_message(bot_token, chat_id, error_msg)
+                return
+            
+            print(f"✅ Creator wallet: {creator_wallet}")
+            print(f"💸 Sending payment: ${agent_price} from {buyer_address} to {creator_wallet}")
+            
+            # Send payment
+            tx_hash = await send_usdc_payment(
+                wallet_id=buyer_wallet_id,
+                wallet_address=buyer_address,
+                recipient_address=creator_wallet,
+                amount_usdc=agent_price
+            )
+            
+            if not tx_hash:
+                error_msg = "❌ Payment failed. Please try again or contact support."
+                print(f"❌ BACKGROUND: {error_msg}")
+                await send_telegram_message(bot_token, chat_id, error_msg)
+                return
+            
+            print(f"✅ Payment successful: {tx_hash}")
+        else:
+            print(f"ℹ️  No payment required (price: ${agent_price})")
+        
+        # Payment successful or not required - call agent
+        print(f"📡 Calling agent URL: {agent_url}")
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 agent_result = await client.post(
@@ -452,32 +540,36 @@ async def process_original_telegram_query(telegram_user_id: str, original_query:
                     agent_data = agent_result.json()
                     if "output" in agent_data:
                         response_text = agent_data["output"]
+                        print(f"✅ Agent response received")
                     else:
-                        print(f"Agent response missing 'output' field: {agent_data}")
+                        print(f"⚠️  Agent response missing 'output' field: {agent_data}")
                         response_text = await get_llm_fallback_response(original_query)
                 else:
-                    print(f"Agent URL returned {agent_result.status_code}")
+                    print(f"⚠️  Agent URL returned {agent_result.status_code}")
                     response_text = await get_llm_fallback_response(original_query)
         except Exception as proxy_error:
-            print(f"Agent URL proxy error: {proxy_error}")
+            print(f"❌ Agent URL proxy error: {proxy_error}")
             response_text = await get_llm_fallback_response(original_query)
         
+        # Append transaction hash if payment was made
+        if tx_hash:
+            response_text += f"\n\n💳 [View transaction](https://sepolia.basescan.org/tx/{tx_hash})"
+            print(f"✅ Added transaction hash to response")
+        
         # Send response to Telegram
-        print(f"Sending response to Telegram chat {chat_id}...")
-        async with httpx.AsyncClient() as client:
-            telegram_response = await client.post(
-                f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                json={
-                    "chat_id": chat_id,
-                    "text": response_text
-                }
-            )
-            print(f"✓ Telegram API response: {telegram_response.status_code}")
+        print(f"📤 Sending response to Telegram chat {chat_id}...")
+        await send_telegram_message(bot_token, chat_id, response_text)
+        print(f"✅ BACKGROUND: Processing complete")
+        print(f"{'='*60}\n")
             
     except Exception as e:
-        print(f"Error processing original query: {e}")
+        print(f"❌ ERROR in background processing: {e}")
         import traceback
         traceback.print_exc()
+        try:
+            await send_telegram_message(bot_token, chat_id, "An error occurred processing your request. Please try again.")
+        except:
+            pass
 
 
 async def setup_telegram_webhook(bot_token: str, webhook_url: str) -> dict:
