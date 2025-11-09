@@ -35,7 +35,8 @@ export default function LinkAccountPage() {
   const [status, setStatus] = useState('idle');
   const [loading, setLoading] = useState(false);
   const [manualCode, setManualCode] = useState('');
-  const hasLinkedRef = useRef(false);
+  const linkingInProgressRef = useRef(false);
+  const completedCodeRef = useRef(null);
 
   const queryCode = useMemo(() => {
     const params = new URLSearchParams(location.search);
@@ -65,12 +66,23 @@ export default function LinkAccountPage() {
       return;
     }
 
-    if (!authenticated || hasLinkedRef.current) {
+    if (!authenticated) {
+      return;
+    }
+
+    if (completedCodeRef.current === code) {
+      console.log('Link flow already completed for this code; skipping duplicate invocation.');
+      return;
+    }
+
+    if (linkingInProgressRef.current) {
+      console.log('Linking already in progress; ignoring duplicate invocation.');
       return;
     }
 
     const finalizeLink = async () => {
       try {
+        linkingInProgressRef.current = true;
         setLoading(true);
         setStatus('linking');
         const token = await getAccessToken();
@@ -170,8 +182,8 @@ export default function LinkAccountPage() {
 
         console.log('✅ Backend link complete successful');
 
+        completedCodeRef.current = code;
         sessionStorage.removeItem(STORAGE_KEY);
-        hasLinkedRef.current = true;
         setStatus('success');
 
         toast.success('Account linked');
@@ -186,6 +198,7 @@ export default function LinkAccountPage() {
         });
         setStatus('error');
       } finally {
+        linkingInProgressRef.current = false;
         setLoading(false);
       }
     };
@@ -261,4 +274,3 @@ export default function LinkAccountPage() {
     </div>
   );
 }
-
