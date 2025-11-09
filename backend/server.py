@@ -182,6 +182,8 @@ async def get_or_create_user_wallet(user_id: str) -> Optional[str]:
     """
     Get or create a Privy embedded wallet for a user on Base Sepolia.
     Returns the wallet address or None if creation fails.
+    
+    Note: One wallet per user, reused across all their agents.
     """
     if not _privy_client:
         print("ERROR: Privy client not initialized")
@@ -203,9 +205,9 @@ async def get_or_create_user_wallet(user_id: str) -> Optional[str]:
         # No wallet found, create one
         print(f"Creating new embedded wallet for user: {user_id[:20]}...")
         
-        # Create wallet using Privy API
+        # Create wallet using Privy API with correct parameters
         wallet_response = _privy_client.wallets.create(
-            user_id=user_id,
+            owner_id=user_id,  # Correct parameter name
             chain_type="ethereum"
         )
         
