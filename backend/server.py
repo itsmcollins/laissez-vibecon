@@ -375,22 +375,20 @@ async def send_usdc_payment(
                 },
                 json={
                     "method": "eth_sendTransaction",
+                    "caip2": f"eip155:{BASE_SEPOLIA_CHAIN_ID}",
                     "params": {
-                        "origin": "https://telepriv.preview.emergentagent.com",  # Required by Privy
-                        "caip2": f"eip155:{BASE_SEPOLIA_CHAIN_ID}",
-                        "params": {
-                            "transaction": {
-                                "to": X402_USDC_ADDRESS,
-                                "value": "0x0",
-                                "data": data,
-                                "chain_id": BASE_SEPOLIA_CHAIN_ID
-                            }
-                        },
-                        "sponsor": True,  # Enable gas sponsorship
-                        "authorization_context": {
-                            "authorization_private_keys": [LAISSEZ_AUTHORIZATION_KEY]
+                        "transaction": {
+                            "to": X402_USDC_ADDRESS,
+                            "value": "0x0",
+                            "data": data,
+                            "chain_id": BASE_SEPOLIA_CHAIN_ID
                         }
-                    }
+                    },
+                    "sponsor": True,  # Enable gas sponsorship
+                    "authorization_context": {
+                        "authorization_private_keys": [LAISSEZ_AUTHORIZATION_KEY]
+                    },
+                    "origin": "https://telepriv.preview.emergentagent.com"  # Required by Privy
                 }
             )
             
